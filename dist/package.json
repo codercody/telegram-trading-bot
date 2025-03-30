@@ -3,19 +3,12 @@
   "version": "1.0.0",
   "description": "A Telegram bot for mock trading with real-time market data",
   "main": "src/bot.js",
-  "scripts": {
-    "start": "node src/bot.js",
-    "dev": "nodemon src/bot.js",
-    "build": "node scripts/build.js",
-    "clean": "node scripts/build.js clean",
-    "prebuild": "npm run clean"
-  },
   "dependencies": {
     "dotenv": "^16.4.5",
     "node-telegram-bot-api": "^0.64.0",
     "yahoo-finance2": "^2.4.10"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.0"
+  "scripts": {
+    "start": "node src/bot.js"
   }
-} 
+}
