@@ -180,7 +180,13 @@ function handlePinInput(chatId, pin) {
     return false;
   }
 
-  return true;
+  // Verify PIN against trading service
+  try {
+    tradingService.verifyPin(pin);
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
 // Command handlers
@@ -321,8 +327,8 @@ bot.onText(/^\d{4}$/, async (msg) => {
   if (!handlePinInput(chatId, pin)) {
     sendBilingualMessage(
       chatId,
-      'Too many invalid PIN attempts. Please try the operation again.',
-      'PIN码验证失败次数过多。请重新尝试操作。'
+      translations.messages.invalidPin.en,
+      translations.messages.invalidPin.zh
     );
     return;
   }

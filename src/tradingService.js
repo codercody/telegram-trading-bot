@@ -146,7 +146,7 @@ class TradingService {
       throw new Error('Insufficient funds');
     }
 
-    if (orderType === 'MARKET' && !this.isMarketOpen()) {
+    if (orderType === 'MARKET' && !this.isMarketOpen(pin)) {
       throw new Error('Market orders are only accepted during market hours (9:30 AM - 4:00 PM ET)');
     }
 
@@ -217,7 +217,7 @@ class TradingService {
       throw new Error('Insufficient shares');
     }
 
-    if (orderType === 'MARKET' && !this.isMarketOpen()) {
+    if (orderType === 'MARKET' && !this.isMarketOpen(pin)) {
       throw new Error('Market orders are only accepted during market hours (9:30 AM - 4:00 PM ET)');
     }
 
@@ -268,55 +268,42 @@ class TradingService {
   }
 
   async checkLimitOrders() {
-    if (!this.isMarketOpen()) {
-      return; // Don't check limit orders outside market hours
-    }
-
     for (const [orderId, order] of this.pendingOrders.entries()) {
       const currentPrice = await this.getRealPrice(order.symbol);
       
       if (order.type === 'BUY' && currentPrice <= order.limitPrice) {
-        // Execute buy limit order
         await this.executeLimitOrder(orderId, order);
       } else if (order.type === 'SELL' && currentPrice >= order.limitPrice) {
-        // Execute sell limit order
         await this.executeLimitOrder(orderId, order);
       }
     }
   }
 
   async executeLimitOrder(orderId, order) {
-    const currentPrice = await this.getRealPrice(order.symbol);
-    
     if (order.type === 'BUY') {
+      const currentPrice = await this.getRealPrice(order.symbol);
       const totalCost = currentPrice * order.quantity;
-      if (totalCost <= this.balance) {
-        // Update position
-        const currentPosition = this.positions.get(order.symbol) || { quantity: 0, avgPrice: 0 };
-        const newQuantity = currentPosition.quantity + order.quantity;
-        const newAvgPrice = ((currentPosition.quantity * currentPosition.avgPrice) + (order.quantity * currentPrice)) / newQuantity;
 
-        this.positions.set(order.symbol, {
-          quantity: newQuantity,
-          avgPrice: newAvgPrice
-        });
-
-        // Update balance
-        this.balance -= totalCost;
-
-        // Record order
-        this.orderHistory.push({
-          type: 'BUY',
-          symbol: order.symbol,
-          quantity: order.quantity,
-          price: currentPrice,
-          orderType: 'LIMIT',
-          timestamp: new Date()
-        });
+      if (totalCost > this.balance) {
+        return; // Skip if insufficient funds
       }
+
+      // Update position
+      const currentPosition = this.positions.get(order.symbol) || { quantity: 0, avgPrice: 0 };
+      const newQuantity = currentPosition.quantity + order.quantity;
+      const newAvgPrice = ((currentPosition.quantity * currentPosition.avgPrice) + (order.quantity * currentPrice)) / newQuantity;
+
+      this.positions.set(order.symbol, {
+        quantity: newQuantity,
+        avgPrice: newAvgPrice
+      });
+
+      // Update balance
+      this.balance -= totalCost;
     } else {
+      const currentPrice = await this.getRealPrice(order.symbol);
       const totalProceeds = currentPrice * order.quantity;
-      
+
       // Update position
       const position = this.positions.get(order.symbol);
       if (position.quantity === order.quantity) {
@@ -327,17 +314,17 @@ class TradingService {
 
       // Update balance
       this.balance += totalProceeds;
-
-      // Record order
-      this.orderHistory.push({
-        type: 'SELL',
-        symbol: order.symbol,
-        quantity: order.quantity,
-        price: currentPrice,
-        orderType: 'LIMIT',
-        timestamp: new Date()
-      });
     }
+
+    // Record order
+    this.orderHistory.push({
+      type: order.type,
+      symbol: order.symbol,
+      quantity: order.quantity,
+      price: order.limitPrice,
+      orderType: 'LIMIT',
+      timestamp: new Date()
+    });
 
     // Remove the executed order
     this.pendingOrders.delete(orderId);
