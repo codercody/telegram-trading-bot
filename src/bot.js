@@ -161,11 +161,17 @@ function startPinVerification(chatId, action, params) {
     attempts: 0
   });
   
-  sendBilingualMessage(
-    chatId,
-    translations.messages.pinRequired.en,
-    translations.messages.pinRequired.zh
-  );
+  // Send PIN prompt and store the message ID
+  bot.sendMessage(chatId, `${translations.messages.pinRequired.en}\n\n${translations.messages.pinRequired.zh}`)
+    .then(message => {
+      userStates.set(chatId, {
+        ...userStates.get(chatId),
+        pinMessageId: message.message_id
+      });
+    })
+    .catch(error => {
+      console.error('Error sending PIN prompt:', error);
+    });
 }
 
 function handlePinInput(chatId, pin) {
@@ -324,6 +330,13 @@ bot.onText(/^\d{4}$/, async (msg) => {
     return;
   }
 
+  // Delete the PIN input message
+  try {
+    await bot.deleteMessage(chatId, msg.message_id);
+  } catch (error) {
+    console.error('Error deleting PIN input message:', error);
+  }
+
   if (!handlePinInput(chatId, pin)) {
     sendBilingualMessage(
       chatId,
@@ -476,6 +489,14 @@ bot.onText(/^\d{4}$/, async (msg) => {
       );
     }
   } finally {
+    // Delete the PIN prompt message
+    if (state.pinMessageId) {
+      try {
+        await bot.deleteMessage(chatId, state.pinMessageId);
+      } catch (error) {
+        console.error('Error deleting PIN prompt message:', error);
+      }
+    }
     userStates.delete(chatId);
   }
 });
