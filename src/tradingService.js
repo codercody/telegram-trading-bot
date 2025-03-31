@@ -399,20 +399,42 @@ class TradingService {
   isMarketOpen() {
     const now = new Date();
     const day = now.getDay();
-    const hour = now.getHours();
-    const minute = now.getMinutes();
+    
+    // Check if it's a weekday (Monday = 1, Friday = 5)
+    if (day === 0 || day === 6) {
+      return false;
+    }
 
-    // Market is open Monday-Friday, 9:30 AM - 4:00 PM ET
-    if (day === 0 || day === 6) return false;
-    if (hour < 9 || (hour === 9 && minute < 30) || hour >= 16) return false;
+    // Convert to Eastern Time (UTC-4/UTC-5)
+    const isDST = this.isDST(now);
+    const etOffset = isDST ? -4 : -5;
+    const etHour = now.getUTCHours() + etOffset;
+    const etMinute = now.getUTCMinutes();
+
+    // Market hours: 9:30 AM - 4:00 PM ET
+    if (etHour < 9 || (etHour === 9 && etMinute < 30) || etHour >= 16) {
+      return false;
+    }
 
     return true;
   }
 
   isDST(date) {
-    const year = date.getFullYear();
-    const firstSunday = new Date(year, 2, 1);
-    const lastSunday = new Date(year, 10, 1);
+    const year = date.getUTCFullYear();
+    const firstSunday = new Date(Date.UTC(year, 2, 1));
+    const lastSunday = new Date(Date.UTC(year, 10, 1));
+    
+    // Find the second Sunday in March
+    while (firstSunday.getUTCDay() !== 0) {
+      firstSunday.setUTCDate(firstSunday.getUTCDate() + 1);
+    }
+    firstSunday.setUTCDate(firstSunday.getUTCDate() + 7);
+    
+    // Find the first Sunday in November
+    while (lastSunday.getUTCDay() !== 0) {
+      lastSunday.setUTCDate(lastSunday.getUTCDate() + 1);
+    }
+    
     return date >= firstSunday && date < lastSunday;
   }
 }
