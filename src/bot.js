@@ -1,15 +1,13 @@
 require('dotenv').config();
-const { Telegraf } = require('telegraf');
+const TelegramBot = require('node-telegram-bot-api');
 const { TradingService } = require('./tradingService');
 
 // Initialize bot with your token
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+const token = process.env.TELEGRAM_BOT_TOKEN;
+const bot = new TelegramBot(token, { polling: true });
 
 // Initialize trading service
 const tradingService = new TradingService();
-
-// State management for PIN verification
-const userStates = new Map();
 
 // Translations
 const translations = {
@@ -140,9 +138,8 @@ const translations = {
 };
 
 // Helper function to send bilingual messages
-async function sendBilingualMessage(ctx, enMessage, zhMessage) {
-  const message = `${enMessage}\n\n${zhMessage}`;
-  return await ctx.reply(message);
+function sendBilingualMessage(chatId, enMessage, zhMessage) {
+  bot.sendMessage(chatId, `${enMessage}\n\n${zhMessage}`);
 }
 
 // Start checking limit orders periodically
@@ -154,411 +151,354 @@ setInterval(async () => {
   }
 }, 30000); // Check every 30 seconds
 
-// Start command
-bot.command('start', async (ctx) => {
-  const telegramId = ctx.from.id;
-  await sendBilingualMessage(
-    ctx,
-    translations.welcome.en + Object.values(translations.commands).map(cmd => cmd.en).join('\n'),
-    translations.welcome.zh + Object.values(translations.commands).map(cmd => cmd.zh).join('\n')
-  );
-});
+// Add PIN verification state tracking
+const userStates = new Map();
 
-// Help command
-bot.command('help', async (ctx) => {
-  const telegramId = ctx.from.id;
-  await sendBilingualMessage(
-    ctx,
-    Object.values(translations.commands).map(cmd => cmd.en).join('\n'),
-    Object.values(translations.commands).map(cmd => cmd.zh).join('\n')
-  );
-});
-
-// Balance command
-bot.command('balance', async (ctx) => {
-  const telegramId = ctx.from.id;
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const balance = await tradingService.getBalance(telegramId, pin);
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.balance.en(balance),
-        translations.messages.balance.zh(balance)
-      );
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
+function startPinVerification(chatId, action, params) {
+  userStates.set(chatId, {
+    action,
+    params,
+    attempts: 0
   });
-});
-
-// Positions command
-bot.command('positions', async (ctx) => {
-  const telegramId = ctx.from.id;
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const positions = await tradingService.getPositions(telegramId, pin);
-      if (positions.length === 0) {
-        await sendBilingualMessage(
-          ctx,
-          translations.messages.noPositions.en,
-          translations.messages.noPositions.zh
-        );
-      } else {
-        const positionList = positions.map(pos => 
-          translations.messages.positionFormat.en
-            .replace('{symbol}', pos.symbol)
-            .replace('{quantity}', pos.quantity)
-            .replace('{avgPrice}', pos.avg_price.toFixed(2))
-        ).join('\n');
-
-        const positionListZh = positions.map(pos => 
-          translations.messages.positionFormat.zh
-            .replace('{symbol}', pos.symbol)
-            .replace('{quantity}', pos.quantity)
-            .replace('{avgPrice}', pos.avg_price.toFixed(2))
-        ).join('\n');
-
-        await sendBilingualMessage(
-          ctx,
-          translations.messages.positions.en + '\n' + positionList,
-          translations.messages.positions.zh + '\n' + positionListZh
-        );
-      }
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// PnL command
-bot.command('pnl', async (ctx) => {
-  const telegramId = ctx.from.id;
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const pnl = await tradingService.getPnL(telegramId, pin);
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.pnl.en(pnl),
-        translations.messages.pnl.zh(pnl)
-      );
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// Buy command
-bot.command('buy', async (ctx) => {
-  const telegramId = ctx.from.id;
-  const args = ctx.message.text.split(' ');
-  if (args.length < 4) {
-    await sendBilingualMessage(
-      ctx,
-      translations.commands.buy.en + '\n' + translations.commands.buy.zh,
-      translations.commands.buy.en + '\n' + translations.commands.buy.zh
-    );
-    return;
-  }
-
-  const symbol = args[1].toUpperCase();
-  const quantity = parseInt(args[2]);
-  const orderType = args[3].toUpperCase();
-  const limitPrice = orderType === 'LIMIT' ? parseFloat(args[4]) : null;
-
-  if (orderType === 'LIMIT' && !limitPrice) {
-    await sendBilingualMessage(
-      ctx,
-      translations.messages.limitPriceRequired.en,
-      translations.messages.limitPriceRequired.zh
-    );
-    return;
-  }
-
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const result = await tradingService.placeBuyOrder(
-        telegramId,
-        symbol,
-        quantity,
-        orderType,
-        limitPrice,
-        pin
-      );
-
-      if (result.orderType === 'LIMIT') {
-        await sendBilingualMessage(
-          ctx,
-          result.message,
-          translations.messages.limitOrderPlaced.zh
-            .replace('{symbol}', symbol)
-            .replace('{quantity}', quantity)
-            .replace('{price}', limitPrice.toFixed(2))
-        );
-      } else {
-        await sendBilingualMessage(
-          ctx,
-          translations.messages.marketOrderExecuted.en
-            .replace('{symbol}', symbol)
-            .replace('{quantity}', quantity)
-            .replace('{price}', result.price.toFixed(2)),
-          translations.messages.marketOrderExecuted.zh
-            .replace('{symbol}', symbol)
-            .replace('{quantity}', quantity)
-            .replace('{price}', result.price.toFixed(2))
-        );
-      }
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// Sell command
-bot.command('sell', async (ctx) => {
-  const telegramId = ctx.from.id;
-  const args = ctx.message.text.split(' ');
-  if (args.length < 4) {
-    await sendBilingualMessage(
-      ctx,
-      translations.commands.sell.en + '\n' + translations.commands.sell.zh,
-      translations.commands.sell.en + '\n' + translations.commands.sell.zh
-    );
-    return;
-  }
-
-  const symbol = args[1].toUpperCase();
-  const quantity = parseInt(args[2]);
-  const orderType = args[3].toUpperCase();
-  const limitPrice = orderType === 'LIMIT' ? parseFloat(args[4]) : null;
-
-  if (orderType === 'LIMIT' && !limitPrice) {
-    await sendBilingualMessage(
-      ctx,
-      translations.messages.limitPriceRequired.en,
-      translations.messages.limitPriceRequired.zh
-    );
-    return;
-  }
-
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const result = await tradingService.placeSellOrder(
-        telegramId,
-        symbol,
-        quantity,
-        orderType,
-        limitPrice,
-        pin
-      );
-
-      if (result.orderType === 'LIMIT') {
-        await sendBilingualMessage(
-          ctx,
-          result.message,
-          translations.messages.limitOrderPlaced.zh
-            .replace('{symbol}', symbol)
-            .replace('{quantity}', quantity)
-            .replace('{price}', limitPrice.toFixed(2))
-        );
-      } else {
-        await sendBilingualMessage(
-          ctx,
-          translations.messages.marketOrderExecuted.en
-            .replace('{symbol}', symbol)
-            .replace('{quantity}', quantity)
-            .replace('{price}', result.price.toFixed(2)),
-          translations.messages.marketOrderExecuted.zh
-            .replace('{symbol}', symbol)
-            .replace('{quantity}', quantity)
-            .replace('{price}', result.price.toFixed(2))
-        );
-      }
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// Orders command
-bot.command('orders', async (ctx) => {
-  const telegramId = ctx.from.id;
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const orders = await tradingService.getPendingOrders(telegramId);
-      if (orders.length === 0) {
-        await sendBilingualMessage(
-          ctx,
-          translations.messages.noPendingOrders.en,
-          translations.messages.noPendingOrders.zh
-        );
-      } else {
-        const orderList = orders.map(order => 
-          translations.messages.orderFormat.en
-            .replace('{orderId}', order.order_id)
-            .replace('{type}', order.type)
-            .replace('{symbol}', order.symbol)
-            .replace('{quantity}', order.quantity)
-            .replace('{price}', order.price.toFixed(2))
-        ).join('\n');
-
-        const orderListZh = orders.map(order => 
-          translations.messages.orderFormat.zh
-            .replace('{orderId}', order.order_id)
-            .replace('{type}', order.type)
-            .replace('{symbol}', order.symbol)
-            .replace('{quantity}', order.quantity)
-            .replace('{price}', order.price.toFixed(2))
-        ).join('\n');
-
-        await sendBilingualMessage(
-          ctx,
-          translations.messages.pendingOrders.en + '\n' + orderList,
-          translations.messages.pendingOrders.zh + '\n' + orderListZh
-        );
-      }
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// Cancel command
-bot.command('cancel', async (ctx) => {
-  const telegramId = ctx.from.id;
-  const args = ctx.message.text.split(' ');
-  if (args.length !== 2) {
-    await sendBilingualMessage(
-      ctx,
-      translations.commands.cancel.en + '\n' + translations.commands.cancel.zh,
-      translations.commands.cancel.en + '\n' + translations.commands.cancel.zh
-    );
-    return;
-  }
-
-  const orderId = args[1];
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const order = await tradingService.cancelOrder(telegramId, orderId, pin);
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.orderCancelled.en
-          .replace('{type}', order.type)
-          .replace('{symbol}', order.symbol)
-          .replace('{quantity}', order.quantity)
-          .replace('{price}', order.limitPrice.toFixed(2)),
-        translations.messages.orderCancelled.zh
-          .replace('{type}', order.type)
-          .replace('{symbol}', order.symbol)
-          .replace('{quantity}', order.quantity)
-          .replace('{price}', order.limitPrice.toFixed(2))
-      );
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// Market status command
-bot.command('market', async (ctx) => {
-  const telegramId = ctx.from.id;
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const isOpen = await tradingService.isMarketOpen(telegramId, pin);
-      const now = new Date();
-      const etTime = new Date(now.getTime() + (tradingService.isDST(now) ? -4 : -5) * 60 * 60 * 1000);
-      const timeString = etTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York' });
-      
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.marketStatus.en(isOpen, timeString),
-        translations.messages.marketStatus.zh(isOpen, timeString)
-      );
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// Demo mode command
-bot.command('demo', async (ctx) => {
-  const telegramId = ctx.from.id;
-  startPinVerification(ctx, async (pin) => {
-    try {
-      const isDemo = await tradingService.isDemoMode(telegramId, pin);
-      await tradingService.setDemoMode(telegramId, !isDemo, pin);
-      await sendBilingualMessage(
-        ctx,
-        !isDemo ? translations.messages.demoMode.en(true) : translations.messages.demoMode.en(false),
-        !isDemo ? translations.messages.demoMode.zh(true) : translations.messages.demoMode.zh(false)
-      );
-    } catch (error) {
-      await sendBilingualMessage(
-        ctx,
-        translations.messages.error.en.replace('{error}', error.message),
-        translations.messages.error.zh.replace('{error}', error.message)
-      );
-    }
-  });
-});
-
-// PIN verification helper functions
-function startPinVerification(ctx, callback) {
-  const telegramId = ctx.from.id;
-  userStates.set(telegramId, { waitingForPin: true, callback });
-  sendBilingualMessage(
-    ctx,
-    translations.messages.pinRequired.en,
-    translations.messages.pinRequired.zh
-  );
+  
+  // Send PIN prompt and store the message ID
+  bot.sendMessage(chatId, `${translations.messages.pinRequired.en}\n\n${translations.messages.pinRequired.zh}`)
+    .then(message => {
+      userStates.set(chatId, {
+        ...userStates.get(chatId),
+        pinMessageId: message.message_id
+      });
+    })
+    .catch(error => {
+      console.error('Error sending PIN prompt:', error);
+    });
 }
 
-bot.on('text', async (ctx) => {
-  const telegramId = ctx.from.id;
-  const state = userStates.get(telegramId);
+function handlePinInput(chatId, pin) {
+  const state = userStates.get(chatId);
+  if (!state) {
+    return false;
+  }
+
+  state.attempts++;
+  if (state.attempts > 3) {
+    userStates.delete(chatId);
+    return false;
+  }
+
+  // Verify PIN against trading service
+  try {
+    tradingService.verifyPin(pin);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Command handlers
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  const enMessage = translations.welcome.en + Object.values(translations.commands).map(cmd => cmd.en).join('\n');
+  const zhMessage = translations.welcome.zh + Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
+  sendBilingualMessage(chatId, enMessage, zhMessage);
+});
+
+bot.onText(/\/help/, (msg) => {
+  const chatId = msg.chat.id;
+  const enMessage = Object.values(translations.commands).map(cmd => cmd.en).join('\n');
+  const zhMessage = Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
+  sendBilingualMessage(chatId, enMessage, zhMessage);
+});
+
+bot.onText(/\/balance/, (msg) => {
+  const chatId = msg.chat.id;
+  startPinVerification(chatId, 'balance');
+});
+
+bot.onText(/\/positions/, (msg) => {
+  const chatId = msg.chat.id;
+  startPinVerification(chatId, 'positions');
+});
+
+bot.onText(/\/orders/, (msg) => {
+  const chatId = msg.chat.id;
+  const pendingOrders = tradingService.getPendingOrders();
   
-  if (state && state.waitingForPin) {
-    const pin = ctx.message.text;
-    userStates.delete(telegramId);
-    await state.callback(pin);
+  if (pendingOrders.length === 0) {
+    sendBilingualMessage(
+      chatId,
+      translations.messages.noPendingOrders.en,
+      translations.messages.noPendingOrders.zh
+    );
+    return;
+  }
+  
+  const enMessage = translations.messages.pendingOrders.en + 
+    pendingOrders.map(order => translations.messages.orderFormat.en(order.orderId, order.type, order.quantity, order.symbol, order.limitPrice)).join('\n');
+  
+  const zhMessage = translations.messages.pendingOrders.zh + 
+    pendingOrders.map(order => translations.messages.orderFormat.zh(order.orderId, order.type, order.quantity, order.symbol, order.limitPrice)).join('\n');
+  
+  sendBilingualMessage(chatId, enMessage, zhMessage);
+});
+
+bot.onText(/\/pnl/, (msg) => {
+  const chatId = msg.chat.id;
+  startPinVerification(chatId, 'pnl');
+});
+
+bot.onText(/\/buy (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const args = match[1].split(' ');
+  
+  if (args.length < 2) {
+    sendBilingualMessage(
+      chatId,
+      'Please provide both symbol and quantity. Example: /buy AAPL 10 or /buy AAPL 10 limit 150.50',
+      '请提供股票代码和数量。例如: /buy AAPL 10 或 /buy AAPL 10 limit 150.50'
+    );
+    return;
+  }
+
+  const symbol = args[0];
+  const quantity = parseInt(args[1]);
+  let orderType = 'MARKET';
+  let limitPrice = null;
+
+  if (args.length >= 4 && args[2].toLowerCase() === 'limit') {
+    orderType = 'LIMIT';
+    limitPrice = parseFloat(args[3]);
+  }
+
+  startPinVerification(chatId, 'buy', { symbol, quantity, orderType, limitPrice });
+});
+
+bot.onText(/\/sell (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const args = match[1].split(' ');
+  
+  if (args.length < 2) {
+    sendBilingualMessage(
+      chatId,
+      'Please provide both symbol and quantity. Example: /sell AAPL 10 or /sell AAPL 10 limit 150.50',
+      '请提供股票代码和数量。例如: /sell AAPL 10 或 /sell AAPL 10 limit 150.50'
+    );
+    return;
+  }
+
+  const symbol = args[0];
+  const quantity = parseInt(args[1]);
+  let orderType = 'MARKET';
+  let limitPrice = null;
+
+  if (args.length >= 4 && args[2].toLowerCase() === 'limit') {
+    orderType = 'LIMIT';
+    limitPrice = parseFloat(args[3]);
+  }
+
+  startPinVerification(chatId, 'sell', { symbol, quantity, orderType, limitPrice });
+});
+
+bot.onText(/\/demo/, (msg) => {
+  const chatId = msg.chat.id;
+  startPinVerification(chatId, 'demo');
+});
+
+bot.onText(/\/mode/, (msg) => {
+  const chatId = msg.chat.id;
+  startPinVerification(chatId, 'mode');
+});
+
+bot.onText(/\/market/, (msg) => {
+  const chatId = msg.chat.id;
+  startPinVerification(chatId, 'market');
+});
+
+bot.onText(/\/cancel (.+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+  const orderId = match[1];
+  startPinVerification(chatId, 'cancel', { orderId });
+});
+
+// Update PIN input handler
+bot.onText(/^\d{4}$/, async (msg) => {
+  const chatId = msg.chat.id;
+  const pin = msg.text;
+  const state = userStates.get(chatId);
+
+  if (!state) {
+    return;
+  }
+
+  // Delete the PIN input message
+  try {
+    await bot.deleteMessage(chatId, msg.message_id);
+  } catch (error) {
+    console.error('Error deleting PIN input message:', error);
+  }
+
+  if (!handlePinInput(chatId, pin)) {
+    sendBilingualMessage(
+      chatId,
+      translations.messages.invalidPin.en,
+      translations.messages.invalidPin.zh
+    );
+    return;
+  }
+
+  try {
+    let result;
+    switch (state.action) {
+      case 'balance':
+        const balance = tradingService.getBalance(pin);
+        sendBilingualMessage(
+          chatId,
+          translations.messages.balance.en(balance),
+          translations.messages.balance.zh(balance)
+        );
+        break;
+
+      case 'positions':
+        const positions = tradingService.getPositions(pin);
+        if (positions.length === 0) {
+          sendBilingualMessage(
+            chatId,
+            translations.messages.noPositions.en,
+            translations.messages.noPositions.zh
+          );
+        } else {
+          const enMessage = translations.messages.positions.en + 
+            positions.map(pos => translations.messages.positionFormat.en(pos.symbol, pos.quantity, pos.avgPrice)).join('\n');
+          
+          const zhMessage = translations.messages.positions.zh + 
+            positions.map(pos => translations.messages.positionFormat.zh(pos.symbol, pos.quantity, pos.avgPrice)).join('\n');
+          
+          sendBilingualMessage(chatId, enMessage, zhMessage);
+        }
+        break;
+
+      case 'pnl':
+        const pnl = await tradingService.getPnL(pin);
+        sendBilingualMessage(
+          chatId,
+          translations.messages.pnl.en(pnl),
+          translations.messages.pnl.zh(pnl)
+        );
+        break;
+
+      case 'demo':
+        const currentMode = tradingService.isDemoMode(pin);
+        tradingService.setDemoMode(!currentMode, pin);
+        const newMode = tradingService.isDemoMode(pin);
+        sendBilingualMessage(
+          chatId,
+          translations.messages.demoMode.en(newMode),
+          translations.messages.demoMode.zh(newMode)
+        );
+        break;
+
+      case 'mode':
+        const isDemo = tradingService.isDemoMode(pin);
+        sendBilingualMessage(
+          chatId,
+          translations.messages.currentMode.en(isDemo),
+          translations.messages.currentMode.zh(isDemo)
+        );
+        break;
+
+      case 'market':
+        const isOpen = tradingService.isMarketOpen(pin);
+        const now = new Date();
+        const etTime = new Date(now.getTime() + (tradingService.isDST(now) ? -4 : -5) * 60 * 60 * 1000);
+        const timeString = etTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York' });
+        
+        sendBilingualMessage(
+          chatId,
+          translations.messages.marketStatus.en(isOpen, timeString),
+          translations.messages.marketStatus.zh(isOpen, timeString)
+        );
+        break;
+
+      case 'buy':
+        result = await tradingService.placeBuyOrder(
+          state.params.symbol,
+          state.params.quantity,
+          state.params.orderType,
+          state.params.limitPrice,
+          pin
+        );
+        if (result.orderType === 'MARKET') {
+          sendBilingualMessage(
+            chatId,
+            translations.messages.marketOrderExecuted.en('BUY', state.params.symbol, state.params.quantity, result.price),
+            translations.messages.marketOrderExecuted.zh('BUY', state.params.symbol, state.params.quantity, result.price)
+          );
+        } else {
+          sendBilingualMessage(
+            chatId,
+            translations.messages.limitOrderPlaced.en(result.message),
+            translations.messages.limitOrderPlaced.zh(result.message)
+          );
+        }
+        break;
+
+      case 'sell':
+        result = await tradingService.placeSellOrder(
+          state.params.symbol,
+          state.params.quantity,
+          state.params.orderType,
+          state.params.limitPrice,
+          pin
+        );
+        if (result.orderType === 'MARKET') {
+          sendBilingualMessage(
+            chatId,
+            translations.messages.marketOrderExecuted.en('SELL', state.params.symbol, state.params.quantity, result.price),
+            translations.messages.marketOrderExecuted.zh('SELL', state.params.symbol, state.params.quantity, result.price)
+          );
+        } else {
+          sendBilingualMessage(
+            chatId,
+            translations.messages.limitOrderPlaced.en(result.message),
+            translations.messages.limitOrderPlaced.zh(result.message)
+          );
+        }
+        break;
+
+      case 'cancel':
+        result = tradingService.cancelOrder(state.params.orderId, pin);
+        sendBilingualMessage(
+          chatId,
+          translations.messages.orderCancelled.en(result.type, result.symbol, result.quantity, result.limitPrice),
+          translations.messages.orderCancelled.zh(result.type, result.symbol, result.quantity, result.limitPrice)
+        );
+        break;
+    }
+  } catch (error) {
+    if (error.message === 'Invalid PIN') {
+      sendBilingualMessage(
+        chatId,
+        translations.messages.invalidPin.en,
+        translations.messages.invalidPin.zh
+      );
+    } else {
+      sendBilingualMessage(
+        chatId,
+        `Error: ${error.message}`,
+        `错误: ${error.message}`
+      );
+    }
+  } finally {
+    // Delete the PIN prompt message
+    if (state.pinMessageId) {
+      try {
+        await bot.deleteMessage(chatId, state.pinMessageId);
+      } catch (error) {
+        console.error('Error deleting PIN prompt message:', error);
+      }
+    }
+    userStates.delete(chatId);
   }
 });
 
-// Start the bot
-bot.launch();
-console.log('Bot started');
-
-// Enable graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM')); 
+console.log('Bot is running...'); 
