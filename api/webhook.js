@@ -367,40 +367,40 @@ async function handlePinInput(chatId, userId, pin) {
 async function handleCommand(msg) {
   const chatId = msg.chat.id;
   const text = msg.text;
+  const userId = msg.from.id;
 
-  if (text === '/start') {
-    const enMessage = translations.welcome.en + Object.values(translations.commands).map(cmd => cmd.en).join('\n');
-    const zhMessage = translations.welcome.zh + Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
-    return sendBilingualMessage(chatId, enMessage, zhMessage);
-  }
-
-  if (text === '/help') {
-    const enMessage = Object.values(translations.commands).map(cmd => cmd.en).join('\n');
-    const zhMessage = Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
-    return sendBilingualMessage(chatId, enMessage, zhMessage);
-  }
-
-  // Handle PIN input
+  // Handle PIN input first
   if (/^\d{4}$/.test(text)) {
     const pin = text;
-    const userId = msg.from.id;
     await handlePinInput(chatId, userId, pin);
     return;
   }
 
-  // Handle other commands
+  // Handle commands
   if (text.startsWith('/')) {
     const [command, ...args] = text.slice(1).split(' ');
     
     switch (command) {
+      case 'start':
+        const welcomeEnMessage = translations.welcome.en + Object.values(translations.commands).map(cmd => cmd.en).join('\n');
+        const welcomeZhMessage = translations.welcome.zh + Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
+        return sendBilingualMessage(chatId, welcomeEnMessage, welcomeZhMessage);
+
+      case 'help':
+        const helpEnMessage = Object.values(translations.commands).map(cmd => cmd.en).join('\n');
+        const helpZhMessage = Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
+        return sendBilingualMessage(chatId, helpEnMessage, helpZhMessage);
+
       case 'balance':
-        await startPinVerification(chatId, msg.from.id, 'balance');
+        await startPinVerification(chatId, userId, 'balance');
         break;
+
       case 'positions':
-        await startPinVerification(chatId, msg.from.id, 'positions');
+        await startPinVerification(chatId, userId, 'positions');
         break;
+
       case 'orders':
-        const pendingOrders = await tradingService.getPendingOrders(msg.from.id);
+        const pendingOrders = await tradingService.getPendingOrders(userId);
         if (pendingOrders.length === 0) {
           return sendBilingualMessage(
             chatId,
@@ -408,23 +408,28 @@ async function handleCommand(msg) {
             translations.messages.noPendingOrders.zh
           );
         }
-        const enMessage = translations.messages.pendingOrders.en + 
+        const ordersEnMessage = translations.messages.pendingOrders.en + 
           pendingOrders.map(order => translations.messages.orderFormat.en(order.id, order.type, order.quantity, order.symbol, order.limit_price)).join('\n');
-        const zhMessage = translations.messages.pendingOrders.zh + 
+        const ordersZhMessage = translations.messages.pendingOrders.zh + 
           pendingOrders.map(order => translations.messages.orderFormat.zh(order.id, order.type, order.quantity, order.symbol, order.limit_price)).join('\n');
-        return sendBilingualMessage(chatId, enMessage, zhMessage);
+        return sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
+
       case 'pnl':
-        await startPinVerification(chatId, msg.from.id, 'pnl');
+        await startPinVerification(chatId, userId, 'pnl');
         break;
+
       case 'demo':
-        await startPinVerification(chatId, msg.from.id, 'demo');
+        await startPinVerification(chatId, userId, 'demo');
         break;
+
       case 'mode':
-        await startPinVerification(chatId, msg.from.id, 'mode');
+        await startPinVerification(chatId, userId, 'mode');
         break;
+
       case 'market':
-        await startPinVerification(chatId, msg.from.id, 'market');
+        await startPinVerification(chatId, userId, 'market');
         break;
+
       case 'buy':
         if (args.length < 2) {
           return sendBilingualMessage(
@@ -443,8 +448,9 @@ async function handleCommand(msg) {
           limitPrice = parseFloat(args[3]);
         }
 
-        await startPinVerification(chatId, msg.from.id, 'buy', { symbol, quantity, orderType, limitPrice });
+        await startPinVerification(chatId, userId, 'buy', { symbol, quantity, orderType, limitPrice });
         break;
+
       case 'sell':
         if (args.length < 2) {
           return sendBilingualMessage(
@@ -463,8 +469,9 @@ async function handleCommand(msg) {
           sellLimitPrice = parseFloat(args[3]);
         }
 
-        await startPinVerification(chatId, msg.from.id, 'sell', { symbol: sellSymbol, quantity: sellQuantity, orderType: sellOrderType, limitPrice: sellLimitPrice });
+        await startPinVerification(chatId, userId, 'sell', { symbol: sellSymbol, quantity: sellQuantity, orderType: sellOrderType, limitPrice: sellLimitPrice });
         break;
+
       case 'cancel':
         if (args.length < 1) {
           return sendBilingualMessage(
@@ -473,8 +480,15 @@ async function handleCommand(msg) {
             '请提供订单ID。例如: /cancel 123456'
           );
         }
-        await startPinVerification(chatId, msg.from.id, 'cancel', { orderId: args[0] });
+        await startPinVerification(chatId, userId, 'cancel', { orderId: args[0] });
         break;
+
+      default:
+        return sendBilingualMessage(
+          chatId,
+          'Unknown command. Use /help to see available commands.',
+          '未知命令。使用 /help 查看可用命令。'
+        );
     }
   }
 }
