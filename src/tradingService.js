@@ -3,7 +3,6 @@ const { createClient } = require('@supabase/supabase-js');
 
 class TradingService {
   constructor() {
-    this.PIN = '0720';
     this.initialBalance = 100000;
     this.demoMode = false;
     this.pendingOrders = new Map();
@@ -17,174 +16,147 @@ class TradingService {
   }
 
   async initializeUser(userId) {
-    // Check if user exists
-    const { data: user, error: userError } = await this.supabase
+    const { data: existingUser } = await this.supabase
       .from('users')
       .select('*')
       .eq('user_id', userId)
       .single();
 
-    if (userError && userError.code !== 'PGRST116') {
-      throw new Error('Error checking user: ' + userError.message);
-    }
-
-    if (!user) {
-      // Create new user with initial balance
-      const { error: insertError } = await this.supabase
+    if (!existingUser) {
+      const { error } = await this.supabase
         .from('users')
         .insert([
           {
             user_id: userId,
             balance: this.initialBalance,
-            demo_mode: false
+            demo_mode: true
           }
         ]);
 
-      if (insertError) {
-        throw new Error('Error creating user: ' + insertError.message);
-      }
+      if (error) throw error;
     }
-
-    return user || { balance: this.initialBalance, demo_mode: false };
   }
 
   async getBalance(userId) {
-    const { data: user, error } = await this.supabase
+    await this.initializeUser(userId);
+    const { data, error } = await this.supabase
       .from('users')
       .select('balance')
       .eq('user_id', userId)
       .single();
 
-    if (error) {
-      throw new Error('Error getting balance: ' + error.message);
-    }
-
-    return user.balance;
+    if (error) throw error;
+    return data.balance;
   }
 
   async getPositions(userId) {
-    const { data: positions, error } = await this.supabase
+    await this.initializeUser(userId);
+    const { data, error } = await this.supabase
       .from('positions')
       .select('*')
       .eq('user_id', userId);
 
-    if (error) {
-      throw new Error('Error getting positions: ' + error.message);
-    }
-
-    return positions || [];
+    if (error) throw error;
+    return data;
   }
 
   async getPendingOrders(userId) {
-    const { data: orders, error } = await this.supabase
+    await this.initializeUser(userId);
+    const { data, error } = await this.supabase
       .from('pending_orders')
       .select('*')
       .eq('user_id', userId);
 
-    if (error) {
-      throw new Error('Error getting pending orders: ' + error.message);
-    }
-
-    return orders || [];
+    if (error) throw error;
+    return data;
   }
 
   async placeBuyOrder(symbol, quantity, orderType, limitPrice, userId) {
-    const price = await this.getCurrentPrice(symbol);
-    const totalCost = price * quantity;
-
-    // Check if user has enough balance
-    const { data: user, error: userError } = await this.supabase
-      .from('users')
-      .select('balance')
-      .eq('user_id', userId)
-      .single();
-
-    if (userError) {
-      throw new Error('Error checking balance: ' + userError.message);
-    }
-
-    if (user.balance < totalCost) {
-      throw new Error('Insufficient funds');
-    }
-
+    await this.initializeUser(userId);
+    
     if (orderType === 'MARKET') {
-      // Execute market order immediately
-      const { error: updateError } = await this.supabase
-        .from('users')
-        .update({ balance: user.balance - totalCost })
-        .eq('user_id', userId);
-
-      if (updateError) {
-        throw new Error('Error updating balance: ' + updateError.message);
+      const currentPrice = await this.getCurrentPrice(symbol);
+      const totalCost = currentPrice * quantity;
+      
+      // Check if user has enough balance
+      const balance = await this.getBalance(userId);
+      if (balance < totalCost) {
+        throw new Error('Insufficient funds');
       }
 
+      // Update user's balance
+      const { error: balanceError } = await this.supabase
+        .from('users')
+        .update({ balance: balance - totalCost })
+        .eq('user_id', userId);
+
+      if (balanceError) throw balanceError;
+
       // Update or create position
-      const { data: position, error: positionError } = await this.supabase
+      const { data: existingPosition } = await this.supabase
         .from('positions')
         .select('*')
         .eq('user_id', userId)
         .eq('symbol', symbol)
         .single();
 
-      if (positionError && positionError.code !== 'PGRST116') {
-        throw new Error('Error checking position: ' + positionError.message);
-      }
-
-      if (position) {
-        // Update existing position
-        const newQuantity = position.quantity + quantity;
-        const newAvgPrice = ((position.quantity * position.avg_price) + (quantity * price)) / newQuantity;
-
-        const { error: updatePositionError } = await this.supabase
+      if (existingPosition) {
+        const newQuantity = existingPosition.quantity + quantity;
+        const newAvgPrice = ((existingPosition.avg_price * existingPosition.quantity) + (currentPrice * quantity)) / newQuantity;
+        
+        const { error: positionError } = await this.supabase
           .from('positions')
-          .update({
-            quantity: newQuantity,
-            avg_price: newAvgPrice
-          })
+          .update({ quantity: newQuantity, avg_price: newAvgPrice })
           .eq('user_id', userId)
           .eq('symbol', symbol);
 
-        if (updatePositionError) {
-          throw new Error('Error updating position: ' + updatePositionError.message);
-        }
+        if (positionError) throw positionError;
       } else {
-        // Create new position
-        const { error: insertPositionError } = await this.supabase
+        const { error: positionError } = await this.supabase
           .from('positions')
-          .insert([
-            {
-              user_id: userId,
-              symbol,
-              quantity,
-              avg_price: price
-            }
-          ]);
-
-        if (insertPositionError) {
-          throw new Error('Error creating position: ' + insertPositionError.message);
-        }
-      }
-
-      return { orderType: 'MARKET', price };
-    } else {
-      // Create limit order
-      const { data: order, error: orderError } = await this.supabase
-        .from('pending_orders')
-        .insert([
-          {
+          .insert([{
             user_id: userId,
             symbol,
             quantity,
-            limit_price: limitPrice,
-            type: 'BUY'
-          }
-        ])
+            avg_price: currentPrice
+          }]);
+
+        if (positionError) throw positionError;
+      }
+
+      // Record order in history
+      const { error: historyError } = await this.supabase
+        .from('order_history')
+        .insert([{
+          user_id: userId,
+          symbol,
+          quantity,
+          price: currentPrice,
+          type: 'BUY',
+          order_type: 'MARKET'
+        }]);
+
+      if (historyError) throw historyError;
+
+      return {
+        orderType: 'MARKET',
+        price: currentPrice
+      };
+    } else {
+      // Handle limit order
+      const { data: order, error: orderError } = await this.supabase
+        .from('pending_orders')
+        .insert([{
+          user_id: userId,
+          symbol,
+          quantity,
+          limit_price: limitPrice,
+          type: 'BUY'
+        }])
         .select()
         .single();
 
-      if (orderError) {
-        throw new Error('Error creating limit order: ' + orderError.message);
-      }
+      if (orderError) throw orderError;
 
       return {
         orderType: 'LIMIT',
@@ -194,91 +166,84 @@ class TradingService {
   }
 
   async placeSellOrder(symbol, quantity, orderType, limitPrice, userId) {
-    // Check if user has enough shares
-    const { data: position, error: positionError } = await this.supabase
-      .from('positions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('symbol', symbol)
-      .single();
-
-    if (positionError) {
-      throw new Error('Error checking position: ' + positionError.message);
-    }
-
-    if (!position || position.quantity < quantity) {
-      throw new Error('Insufficient shares');
-    }
-
+    await this.initializeUser(userId);
+    
     if (orderType === 'MARKET') {
-      const price = await this.getCurrentPrice(symbol);
-      const totalValue = price * quantity;
-
-      // Update user's balance
-      const { data: user, error: userError } = await this.supabase
-        .from('users')
-        .select('balance')
+      const currentPrice = await this.getCurrentPrice(symbol);
+      
+      // Check if user has enough shares
+      const { data: position } = await this.supabase
+        .from('positions')
+        .select('*')
         .eq('user_id', userId)
+        .eq('symbol', symbol)
         .single();
 
-      if (userError) {
-        throw new Error('Error checking balance: ' + userError.message);
-      }
-
-      const { error: updateError } = await this.supabase
-        .from('users')
-        .update({ balance: user.balance + totalValue })
-        .eq('user_id', userId);
-
-      if (updateError) {
-        throw new Error('Error updating balance: ' + updateError.message);
+      if (!position || position.quantity < quantity) {
+        throw new Error('Insufficient shares');
       }
 
       // Update position
       if (position.quantity === quantity) {
-        // Delete position if selling all shares
         const { error: deleteError } = await this.supabase
           .from('positions')
           .delete()
           .eq('user_id', userId)
           .eq('symbol', symbol);
 
-        if (deleteError) {
-          throw new Error('Error deleting position: ' + deleteError.message);
-        }
+        if (deleteError) throw deleteError;
       } else {
-        // Update position quantity
-        const { error: updatePositionError } = await this.supabase
+        const { error: updateError } = await this.supabase
           .from('positions')
           .update({ quantity: position.quantity - quantity })
           .eq('user_id', userId)
           .eq('symbol', symbol);
 
-        if (updatePositionError) {
-          throw new Error('Error updating position: ' + updatePositionError.message);
-        }
+        if (updateError) throw updateError;
       }
 
-      return { orderType: 'MARKET', price };
+      // Update user's balance
+      const balance = await this.getBalance(userId);
+      const { error: balanceError } = await this.supabase
+        .from('users')
+        .update({ balance: balance + (currentPrice * quantity) })
+        .eq('user_id', userId);
+
+      if (balanceError) throw balanceError;
+
+      // Record order in history
+      const { error: historyError } = await this.supabase
+        .from('order_history')
+        .insert([{
+          user_id: userId,
+          symbol,
+          quantity,
+          price: currentPrice,
+          type: 'SELL',
+          order_type: 'MARKET'
+        }]);
+
+      if (historyError) throw historyError;
+
+      return {
+        orderType: 'MARKET',
+        price: currentPrice
+      };
     } else {
-      // Create limit order
+      // Handle limit order
       const { data: order, error: orderError } = await this.supabase
         .from('pending_orders')
-        .insert([
-          {
-            user_id: userId,
-            symbol,
-            quantity,
-            limit_price: limitPrice,
-            type: 'SELL'
-          }
-        ])
+        .insert([{
+          user_id: userId,
+          symbol,
+          quantity,
+          limit_price: limitPrice,
+          type: 'SELL'
+        }])
         .select()
         .single();
 
-      if (orderError) {
-        throw new Error('Error creating limit order: ' + orderError.message);
-      }
+      if (orderError) throw orderError;
 
       return {
         orderType: 'LIMIT',
@@ -288,6 +253,8 @@ class TradingService {
   }
 
   async cancelOrder(orderId, userId) {
+    await this.initializeUser(userId);
+    
     const { data: order, error: orderError } = await this.supabase
       .from('pending_orders')
       .select('*')
@@ -295,9 +262,8 @@ class TradingService {
       .eq('user_id', userId)
       .single();
 
-    if (orderError) {
-      throw new Error('Order not found');
-    }
+    if (orderError) throw orderError;
+    if (!order) throw new Error('Order not found');
 
     const { error: deleteError } = await this.supabase
       .from('pending_orders')
@@ -305,9 +271,7 @@ class TradingService {
       .eq('id', orderId)
       .eq('user_id', userId);
 
-    if (deleteError) {
-      throw new Error('Error cancelling order: ' + deleteError.message);
-    }
+    if (deleteError) throw deleteError;
 
     return {
       type: order.type,
@@ -318,50 +282,43 @@ class TradingService {
   }
 
   async getPnL(userId) {
+    await this.initializeUser(userId);
     const { data: positions, error: positionsError } = await this.supabase
       .from('positions')
       .select('*')
       .eq('user_id', userId);
 
-    if (positionsError) {
-      throw new Error('Error getting positions: ' + positionsError.message);
-    }
+    if (positionsError) throw positionsError;
 
     let totalPnL = 0;
     for (const position of positions) {
       const currentPrice = await this.getCurrentPrice(position.symbol);
-      const positionPnL = (currentPrice - position.avg_price) * position.quantity;
-      totalPnL += positionPnL;
+      totalPnL += (currentPrice - position.avg_price) * position.quantity;
     }
 
     return totalPnL;
   }
 
   async isDemoMode(userId) {
-    const { data: user, error } = await this.supabase
+    await this.initializeUser(userId);
+    const { data, error } = await this.supabase
       .from('users')
       .select('demo_mode')
       .eq('user_id', userId)
       .single();
 
-    if (error) {
-      throw new Error('Error checking demo mode: ' + error.message);
-    }
-
-    return user.demo_mode;
+    if (error) throw error;
+    return data.demo_mode;
   }
 
   async setDemoMode(enabled, userId) {
+    await this.initializeUser(userId);
     const { error } = await this.supabase
       .from('users')
       .update({ demo_mode: enabled })
       .eq('user_id', userId);
 
-    if (error) {
-      throw new Error('Error setting demo mode: ' + error.message);
-    }
-
-    this.demoMode = enabled;
+    if (error) throw error;
   }
 
   async getCurrentPrice(symbol) {
@@ -412,29 +369,15 @@ class TradingService {
     return newPrice;
   }
 
-  isMarketOpen(pin) {
-    if (!this.verifyPin(pin)) {
-      throw new Error('Invalid PIN');
-    }
-
+  isMarketOpen() {
     const now = new Date();
     const day = now.getDay();
     const hour = now.getHours();
     const minute = now.getMinutes();
 
-    // Check if it's a weekday (Monday = 1, Friday = 5)
-    if (day === 0 || day === 6) {
-      return false;
-    }
-
-    // Convert to Eastern Time (UTC-4/UTC-5)
-    const isDST = this.isDST(now);
-    const etHour = isDST ? hour - 4 : hour - 5;
-    
-    // Market hours: 9:30 AM - 4:00 PM ET
-    if (etHour < 9 || (etHour === 9 && minute < 30) || etHour >= 16) {
-      return false;
-    }
+    // Market is open Monday-Friday, 9:30 AM - 4:00 PM ET
+    if (day === 0 || day === 6) return false;
+    if (hour < 9 || (hour === 9 && minute < 30) || hour >= 16) return false;
 
     return true;
   }
@@ -443,18 +386,6 @@ class TradingService {
     const year = date.getFullYear();
     const firstSunday = new Date(year, 2, 1);
     const lastSunday = new Date(year, 10, 1);
-    
-    // Find the second Sunday in March
-    while (firstSunday.getDay() !== 0) {
-      firstSunday.setDate(firstSunday.getDate() + 1);
-    }
-    firstSunday.setDate(firstSunday.getDate() + 7);
-    
-    // Find the first Sunday in November
-    while (lastSunday.getDay() !== 0) {
-      lastSunday.setDate(lastSunday.getDate() + 1);
-    }
-    
     return date >= firstSunday && date < lastSunday;
   }
 }
