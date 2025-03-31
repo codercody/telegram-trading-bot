@@ -11,13 +11,5 @@
       "src": "/api/bot",
       "dest": "api/bot.js"
     }
-  ],
-  "env": {
-    "TELEGRAM_BOT_TOKEN": "@telegram_bot_token",
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_ANON_KEY": "@supabase_anon_key",
-    "INITIAL_BALANCE": "@initial_balance",
-    "PIN": "@pin",
-    "PRICE_CACHE_DURATION": "@price_cache_duration"
-  }
+  ]
 } 
