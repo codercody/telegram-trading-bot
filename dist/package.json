@@ -2,8 +2,9 @@
   "name": "telegram-trading-bot",
   "version": "1.0.0",
   "description": "A Telegram bot for mock trading with real-time market data",
-  "main": "src/bot.js",
+  "main": "api/bot.js",
   "dependencies": {
+    "@supabase/supabase-js": "^2.39.7",
     "dotenv": "^16.4.5",
     "node-telegram-bot-api": "^0.64.0",
     "yahoo-finance2": "^2.4.10"
