@@ -30,7 +30,8 @@ class TradingService {
         .insert([
           {
             user_id: userId,
-            balance: this.initialBalance,
+            demo_balance: this.initialBalance,
+            live_balance: this.initialBalance,
             demo_mode: true
           }
         ]);
