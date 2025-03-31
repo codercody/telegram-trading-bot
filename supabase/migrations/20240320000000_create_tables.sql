@@ -2,7 +2,7 @@
 CREATE TABLE users (
     user_id BIGINT PRIMARY KEY,
     balance DECIMAL(15,2) NOT NULL DEFAULT 100000.00,
-    demo_mode BOOLEAN NOT NULL DEFAULT false,
+    demo_mode BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -11,22 +11,24 @@ CREATE TABLE users (
 CREATE TABLE positions (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(user_id),
-    symbol TEXT NOT NULL,
+    symbol VARCHAR(10) NOT NULL,
     quantity INTEGER NOT NULL,
     avg_price DECIMAL(15,2) NOT NULL,
+    demo_mode BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    UNIQUE(user_id, symbol)
+    UNIQUE(user_id, symbol, demo_mode)
 );
 
 -- Create pending_orders table
 CREATE TABLE pending_orders (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(user_id),
-    symbol TEXT NOT NULL,
+    symbol VARCHAR(10) NOT NULL,
     quantity INTEGER NOT NULL,
     limit_price DECIMAL(15,2) NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('BUY', 'SELL')),
+    type VARCHAR(4) NOT NULL CHECK (type IN ('BUY', 'SELL')),
+    demo_mode BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
@@ -34,11 +36,12 @@ CREATE TABLE pending_orders (
 CREATE TABLE order_history (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(user_id),
-    symbol TEXT NOT NULL,
+    symbol VARCHAR(10) NOT NULL,
     quantity INTEGER NOT NULL,
     price DECIMAL(15,2) NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('BUY', 'SELL')),
-    order_type TEXT NOT NULL CHECK (order_type IN ('MARKET', 'LIMIT')),
+    type VARCHAR(4) NOT NULL CHECK (type IN ('BUY', 'SELL')),
+    order_type VARCHAR(5) NOT NULL CHECK (order_type IN ('MARKET', 'LIMIT')),
+    demo_mode BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 

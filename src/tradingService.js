@@ -7,6 +7,8 @@ class TradingService {
     this.demoMode = false;
     this.pendingOrders = new Map();
     this.lastPrices = new Map();
+    this.demoPrices = new Map();
+    this.PRICE_CACHE_DURATION = 60000; // 1 minute cache
     
     // Initialize Supabase client
     this.supabase = createClient(
@@ -51,10 +53,12 @@ class TradingService {
 
   async getPositions(userId) {
     await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
     const { data, error } = await this.supabase
       .from('positions')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('demo_mode', isDemo);
 
     if (error) throw error;
     return data;
@@ -62,10 +66,12 @@ class TradingService {
 
   async getPendingOrders(userId) {
     await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
     const { data, error } = await this.supabase
       .from('pending_orders')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('demo_mode', isDemo);
 
     if (error) throw error;
     return data;
@@ -73,6 +79,7 @@ class TradingService {
 
   async placeBuyOrder(symbol, quantity, orderType, limitPrice, userId) {
     await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
     
     if (orderType === 'MARKET') {
       const currentPrice = await this.getCurrentPrice(symbol);
@@ -98,6 +105,7 @@ class TradingService {
         .select('*')
         .eq('user_id', userId)
         .eq('symbol', symbol)
+        .eq('demo_mode', isDemo)
         .single();
 
       if (existingPosition) {
@@ -108,7 +116,8 @@ class TradingService {
           .from('positions')
           .update({ quantity: newQuantity, avg_price: newAvgPrice })
           .eq('user_id', userId)
-          .eq('symbol', symbol);
+          .eq('symbol', symbol)
+          .eq('demo_mode', isDemo);
 
         if (positionError) throw positionError;
       } else {
@@ -118,7 +127,8 @@ class TradingService {
             user_id: userId,
             symbol,
             quantity,
-            avg_price: currentPrice
+            avg_price: currentPrice,
+            demo_mode: isDemo
           }]);
 
         if (positionError) throw positionError;
@@ -133,7 +143,8 @@ class TradingService {
           quantity,
           price: currentPrice,
           type: 'BUY',
-          order_type: 'MARKET'
+          order_type: 'MARKET',
+          demo_mode: isDemo
         }]);
 
       if (historyError) throw historyError;
@@ -151,7 +162,8 @@ class TradingService {
           symbol,
           quantity,
           limit_price: limitPrice,
-          type: 'BUY'
+          type: 'BUY',
+          demo_mode: isDemo
         }])
         .select()
         .single();
@@ -167,6 +179,7 @@ class TradingService {
 
   async placeSellOrder(symbol, quantity, orderType, limitPrice, userId) {
     await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
     
     if (orderType === 'MARKET') {
       const currentPrice = await this.getCurrentPrice(symbol);
@@ -177,6 +190,7 @@ class TradingService {
         .select('*')
         .eq('user_id', userId)
         .eq('symbol', symbol)
+        .eq('demo_mode', isDemo)
         .single();
 
       if (!position || position.quantity < quantity) {
@@ -189,7 +203,8 @@ class TradingService {
           .from('positions')
           .delete()
           .eq('user_id', userId)
-          .eq('symbol', symbol);
+          .eq('symbol', symbol)
+          .eq('demo_mode', isDemo);
 
         if (deleteError) throw deleteError;
       } else {
@@ -197,7 +212,8 @@ class TradingService {
           .from('positions')
           .update({ quantity: position.quantity - quantity })
           .eq('user_id', userId)
-          .eq('symbol', symbol);
+          .eq('symbol', symbol)
+          .eq('demo_mode', isDemo);
 
         if (updateError) throw updateError;
       }
@@ -220,7 +236,8 @@ class TradingService {
           quantity,
           price: currentPrice,
           type: 'SELL',
-          order_type: 'MARKET'
+          order_type: 'MARKET',
+          demo_mode: isDemo
         }]);
 
       if (historyError) throw historyError;
@@ -238,7 +255,8 @@ class TradingService {
           symbol,
           quantity,
           limit_price: limitPrice,
-          type: 'SELL'
+          type: 'SELL',
+          demo_mode: isDemo
         }])
         .select()
         .single();
@@ -254,12 +272,14 @@ class TradingService {
 
   async cancelOrder(orderId, userId) {
     await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
     
     const { data: order, error: orderError } = await this.supabase
       .from('pending_orders')
       .select('*')
       .eq('id', orderId)
       .eq('user_id', userId)
+      .eq('demo_mode', isDemo)
       .single();
 
     if (orderError) throw orderError;
@@ -269,7 +289,8 @@ class TradingService {
       .from('pending_orders')
       .delete()
       .eq('id', orderId)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('demo_mode', isDemo);
 
     if (deleteError) throw deleteError;
 
@@ -283,10 +304,12 @@ class TradingService {
 
   async getPnL(userId) {
     await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
     const { data: positions, error: positionsError } = await this.supabase
       .from('positions')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('demo_mode', isDemo);
 
     if (positionsError) throw positionsError;
 
@@ -322,7 +345,8 @@ class TradingService {
   }
 
   async getCurrentPrice(symbol) {
-    if (this.demoMode) {
+    const isDemo = await this.isDemoMode(userId);
+    if (isDemo) {
       return this.getDemoPrice(symbol);
     }
 
