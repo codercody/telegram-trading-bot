@@ -80,7 +80,7 @@ async function handlePositions(msg) {
   const { data: positions, error } = await supabase
     .from('positions')
     .select('*')
-    .eq('user_id', user.id);
+    .eq('telegram_id', chatId);
 
   if (error) throw error;
 
