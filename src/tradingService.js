@@ -3,7 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 class TradingService {
   constructor() {
-    this.initialBalance = 100000;
+    this.initialBalance = 30470;
     this.demoMode = false;
     this.pendingOrders = new Map();
     this.lastPrices = new Map();
