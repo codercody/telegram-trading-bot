@@ -384,14 +384,6 @@ async function handleCommand(msg) {
   if (/^\d{4}$/.test(text)) {
     const pin = text;
     const userId = msg.from.id;
-
-    await startPinVerification(chatId, userId, 'balance');
-    await startPinVerification(chatId, userId, 'positions');
-    await startPinVerification(chatId, userId, 'pnl');
-    await startPinVerification(chatId, userId, 'demo');
-    await startPinVerification(chatId, userId, 'mode');
-    await startPinVerification(chatId, userId, 'market');
-
     await handlePinInput(chatId, userId, pin);
     return;
   }
@@ -408,7 +400,7 @@ async function handleCommand(msg) {
         await startPinVerification(chatId, msg.from.id, 'positions');
         break;
       case 'orders':
-        const pendingOrders = tradingService.getPendingOrders();
+        const pendingOrders = await tradingService.getPendingOrders(msg.from.id);
         if (pendingOrders.length === 0) {
           return sendBilingualMessage(
             chatId,
@@ -417,9 +409,9 @@ async function handleCommand(msg) {
           );
         }
         const enMessage = translations.messages.pendingOrders.en + 
-          pendingOrders.map(order => translations.messages.orderFormat.en(order.orderId, order.type, order.quantity, order.symbol, order.limitPrice)).join('\n');
+          pendingOrders.map(order => translations.messages.orderFormat.en(order.id, order.type, order.quantity, order.symbol, order.limit_price)).join('\n');
         const zhMessage = translations.messages.pendingOrders.zh + 
-          pendingOrders.map(order => translations.messages.orderFormat.zh(order.orderId, order.type, order.quantity, order.symbol, order.limitPrice)).join('\n');
+          pendingOrders.map(order => translations.messages.orderFormat.zh(order.id, order.type, order.quantity, order.symbol, order.limit_price)).join('\n');
         return sendBilingualMessage(chatId, enMessage, zhMessage);
       case 'pnl':
         await startPinVerification(chatId, msg.from.id, 'pnl');
