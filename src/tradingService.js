@@ -94,6 +94,11 @@ class TradingService {
     await this.initializeUser(userId);
     const isDemo = await this.isDemoMode(userId);
     
+    // Check market hours for live mode
+    if (!isDemo && !this.isMarketOpen()) {
+      throw new Error('Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.');
+    }
+    
     if (orderType === 'MARKET') {
       const currentPrice = await this.getCurrentPrice(symbol, userId);
       const totalCost = currentPrice * quantity;
@@ -188,6 +193,11 @@ class TradingService {
   async placeSellOrder(symbol, quantity, orderType, limitPrice, userId) {
     await this.initializeUser(userId);
     const isDemo = await this.isDemoMode(userId);
+    
+    // Check market hours for live mode
+    if (!isDemo && !this.isMarketOpen()) {
+      throw new Error('Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.');
+    }
     
     if (orderType === 'MARKET') {
       const currentPrice = await this.getCurrentPrice(symbol, userId);
