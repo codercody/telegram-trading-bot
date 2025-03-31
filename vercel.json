@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/bot.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/bot",
+      "dest": "api/bot.js"
+    }
+  ],
+  "env": {
+    "TELEGRAM_BOT_TOKEN": "@telegram_bot_token",
+    "SUPABASE_URL": "@supabase_url",
+    "SUPABASE_ANON_KEY": "@supabase_anon_key"
+  }
+} 
