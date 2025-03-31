@@ -134,6 +134,18 @@ const translations = {
     pinPrompt: {
       en: 'Enter PIN:',
       zh: '输入PIN码：'
+    },
+    enterPin: {
+      en: 'Please enter your 4-digit PIN:',
+      zh: '请输入您的4位数字PIN码：'
+    },
+    noPendingAction: {
+      en: 'No pending action. Please use the command format.',
+      zh: '没有待执行的操作。请使用命令格式。'
+    },
+    error: {
+      en: (message) => `Error: ${message}`,
+      zh: (message) => `错误: ${message}`
     }
   }
 };
@@ -171,43 +183,183 @@ async function deleteMessage(chatId, messageId) {
 // PIN verification state tracking
 const userStates = new Map();
 
-function startPinVerification(chatId, action, params) {
-  userStates.set(chatId, {
+// Simplified PIN verification
+async function startPinVerification(chatId, userId, action, params = {}) {
+  const pinMessage = await sendBilingualMessage(
+    chatId,
+    translations.messages.enterPin.en,
+    translations.messages.enterPin.zh
+  );
+  
+  // Store the PIN message ID for later deletion
+  userStates.set(userId, {
     action,
     params,
-    attempts: 0
-  });
-  
-  // Send PIN prompt and store the message ID
-  return sendBilingualMessage(
-    chatId,
-    translations.messages.pinRequired.en,
-    translations.messages.pinRequired.zh
-  ).then(message => {
-    userStates.set(chatId, {
-      ...userStates.get(chatId),
-      pinMessageId: message.result.message_id
-    });
+    pinMessageId: pinMessage.message_id
   });
 }
 
-function handlePinInput(chatId, pin) {
-  const state = userStates.get(chatId);
+async function handlePinInput(chatId, userId, pin) {
+  const state = userStates.get(userId);
   if (!state) {
-    return false;
+    await sendBilingualMessage(
+      chatId,
+      translations.messages.noPendingAction.en,
+      translations.messages.noPendingAction.zh
+    );
+    return;
   }
 
-  state.attempts++;
-  if (state.attempts > 3) {
-    userStates.delete(chatId);
-    return false;
+  // Delete the user's PIN input message
+  await deleteMessage(chatId, state.pinMessageId);
+
+  // Verify PIN
+  if (pin !== '0720') {
+    await sendBilingualMessage(
+      chatId,
+      translations.messages.invalidPin.en,
+      translations.messages.invalidPin.zh
+    );
+    return;
   }
+
+  // Clear the state
+  userStates.delete(userId);
 
   try {
-    tradingService.verifyPin(pin);
-    return true;
+    let result;
+    switch (state.action) {
+      case 'balance':
+        const balance = await tradingService.getBalance(userId);
+        await sendBilingualMessage(
+          chatId,
+          translations.messages.balance.en(balance),
+          translations.messages.balance.zh(balance)
+        );
+        break;
+
+      case 'positions':
+        const positions = await tradingService.getPositions(userId);
+        if (positions.length === 0) {
+          await sendBilingualMessage(
+            chatId,
+            translations.messages.noPositions.en,
+            translations.messages.noPositions.zh
+          );
+        } else {
+          const enMessage = translations.messages.positions.en + 
+            positions.map(pos => translations.messages.positionFormat.en(pos.symbol, pos.quantity, pos.avg_price)).join('\n');
+          
+          const zhMessage = translations.messages.positions.zh + 
+            positions.map(pos => translations.messages.positionFormat.zh(pos.symbol, pos.quantity, pos.avg_price)).join('\n');
+          
+          await sendBilingualMessage(chatId, enMessage, zhMessage);
+        }
+        break;
+
+      case 'pnl':
+        const pnl = await tradingService.getPnL(userId);
+        await sendBilingualMessage(
+          chatId,
+          translations.messages.pnl.en(pnl),
+          translations.messages.pnl.zh(pnl)
+        );
+        break;
+
+      case 'demo':
+        const currentMode = await tradingService.isDemoMode(userId);
+        await tradingService.setDemoMode(!currentMode, userId);
+        const newMode = await tradingService.isDemoMode(userId);
+        await sendBilingualMessage(
+          chatId,
+          translations.messages.demoMode.en(newMode),
+          translations.messages.demoMode.zh(newMode)
+        );
+        break;
+
+      case 'mode':
+        const isDemo = await tradingService.isDemoMode(userId);
+        await sendBilingualMessage(
+          chatId,
+          translations.messages.currentMode.en(isDemo),
+          translations.messages.currentMode.zh(isDemo)
+        );
+        break;
+
+      case 'market':
+        const isOpen = tradingService.isMarketOpen(pin);
+        const now = new Date();
+        const etTime = new Date(now.getTime() + (tradingService.isDST(now) ? -4 : -5) * 60 * 60 * 1000);
+        const timeString = etTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York' });
+        
+        await sendBilingualMessage(
+          chatId,
+          translations.messages.marketStatus.en(isOpen, timeString),
+          translations.messages.marketStatus.zh(isOpen, timeString)
+        );
+        break;
+
+      case 'buy':
+        result = await tradingService.placeBuyOrder(
+          state.params.symbol,
+          state.params.quantity,
+          state.params.orderType,
+          state.params.limitPrice,
+          userId
+        );
+        if (result.orderType === 'MARKET') {
+          await sendBilingualMessage(
+            chatId,
+            translations.messages.marketOrderExecuted.en('BUY', state.params.symbol, state.params.quantity, result.price),
+            translations.messages.marketOrderExecuted.zh('BUY', state.params.symbol, state.params.quantity, result.price)
+          );
+        } else {
+          await sendBilingualMessage(
+            chatId,
+            translations.messages.limitOrderPlaced.en(result.message),
+            translations.messages.limitOrderPlaced.zh(result.message)
+          );
+        }
+        break;
+
+      case 'sell':
+        result = await tradingService.placeSellOrder(
+          state.params.symbol,
+          state.params.quantity,
+          state.params.orderType,
+          state.params.limitPrice,
+          userId
+        );
+        if (result.orderType === 'MARKET') {
+          await sendBilingualMessage(
+            chatId,
+            translations.messages.marketOrderExecuted.en('SELL', state.params.symbol, state.params.quantity, result.price),
+            translations.messages.marketOrderExecuted.zh('SELL', state.params.symbol, state.params.quantity, result.price)
+          );
+        } else {
+          await sendBilingualMessage(
+            chatId,
+            translations.messages.limitOrderPlaced.en(result.message),
+            translations.messages.limitOrderPlaced.zh(result.message)
+          );
+        }
+        break;
+
+      case 'cancel':
+        result = await tradingService.cancelOrder(state.params.orderId, userId);
+        await sendBilingualMessage(
+          chatId,
+          translations.messages.orderCancelled.en(result.type, result.symbol, result.quantity, result.limitPrice),
+          translations.messages.orderCancelled.zh(result.type, result.symbol, result.quantity, result.limitPrice)
+        );
+        break;
+    }
   } catch (error) {
-    return false;
+    await sendBilingualMessage(
+      chatId,
+      translations.messages.error.en(error.message),
+      translations.messages.error.zh(error.message)
+    );
   }
 }
 
@@ -231,172 +383,16 @@ async function handleCommand(msg) {
   // Handle PIN input
   if (/^\d{4}$/.test(text)) {
     const pin = text;
-    const state = userStates.get(chatId);
+    const userId = msg.from.id;
 
-    if (!state) {
-      return;
-    }
+    await startPinVerification(chatId, userId, 'balance');
+    await startPinVerification(chatId, userId, 'positions');
+    await startPinVerification(chatId, userId, 'pnl');
+    await startPinVerification(chatId, userId, 'demo');
+    await startPinVerification(chatId, userId, 'mode');
+    await startPinVerification(chatId, userId, 'market');
 
-    // Delete the PIN input message
-    await deleteMessage(chatId, msg.message_id);
-
-    if (!handlePinInput(chatId, pin)) {
-      await sendBilingualMessage(
-        chatId,
-        translations.messages.invalidPin.en,
-        translations.messages.invalidPin.zh
-      );
-      return;
-    }
-
-    try {
-      let result;
-      switch (state.action) {
-        case 'balance':
-          const balance = tradingService.getBalance(pin);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.balance.en(balance),
-            translations.messages.balance.zh(balance)
-          );
-          break;
-
-        case 'positions':
-          const positions = tradingService.getPositions(pin);
-          if (positions.length === 0) {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.noPositions.en,
-              translations.messages.noPositions.zh
-            );
-          } else {
-            const enMessage = translations.messages.positions.en + 
-              positions.map(pos => translations.messages.positionFormat.en(pos.symbol, pos.quantity, pos.avgPrice)).join('\n');
-            
-            const zhMessage = translations.messages.positions.zh + 
-              positions.map(pos => translations.messages.positionFormat.zh(pos.symbol, pos.quantity, pos.avgPrice)).join('\n');
-            
-            await sendBilingualMessage(chatId, enMessage, zhMessage);
-          }
-          break;
-
-        case 'pnl':
-          const pnl = await tradingService.getPnL(pin);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.pnl.en(pnl),
-            translations.messages.pnl.zh(pnl)
-          );
-          break;
-
-        case 'demo':
-          const currentMode = tradingService.isDemoMode(pin);
-          tradingService.setDemoMode(!currentMode, pin);
-          const newMode = tradingService.isDemoMode(pin);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.demoMode.en(newMode),
-            translations.messages.demoMode.zh(newMode)
-          );
-          break;
-
-        case 'mode':
-          const isDemo = tradingService.isDemoMode(pin);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.currentMode.en(isDemo),
-            translations.messages.currentMode.zh(isDemo)
-          );
-          break;
-
-        case 'market':
-          const isOpen = tradingService.isMarketOpen(pin);
-          const now = new Date();
-          const etTime = new Date(now.getTime() + (tradingService.isDST(now) ? -4 : -5) * 60 * 60 * 1000);
-          const timeString = etTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York' });
-          
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.marketStatus.en(isOpen, timeString),
-            translations.messages.marketStatus.zh(isOpen, timeString)
-          );
-          break;
-
-        case 'buy':
-          result = await tradingService.placeBuyOrder(
-            state.params.symbol,
-            state.params.quantity,
-            state.params.orderType,
-            state.params.limitPrice,
-            pin
-          );
-          if (result.orderType === 'MARKET') {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.marketOrderExecuted.en('BUY', state.params.symbol, state.params.quantity, result.price),
-              translations.messages.marketOrderExecuted.zh('BUY', state.params.symbol, state.params.quantity, result.price)
-            );
-          } else {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.limitOrderPlaced.en(result.message),
-              translations.messages.limitOrderPlaced.zh(result.message)
-            );
-          }
-          break;
-
-        case 'sell':
-          result = await tradingService.placeSellOrder(
-            state.params.symbol,
-            state.params.quantity,
-            state.params.orderType,
-            state.params.limitPrice,
-            pin
-          );
-          if (result.orderType === 'MARKET') {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.marketOrderExecuted.en('SELL', state.params.symbol, state.params.quantity, result.price),
-              translations.messages.marketOrderExecuted.zh('SELL', state.params.symbol, state.params.quantity, result.price)
-            );
-          } else {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.limitOrderPlaced.en(result.message),
-              translations.messages.limitOrderPlaced.zh(result.message)
-            );
-          }
-          break;
-
-        case 'cancel':
-          result = tradingService.cancelOrder(state.params.orderId, pin);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.orderCancelled.en(result.type, result.symbol, result.quantity, result.limitPrice),
-            translations.messages.orderCancelled.zh(result.type, result.symbol, result.quantity, result.limitPrice)
-          );
-          break;
-      }
-    } catch (error) {
-      if (error.message === 'Invalid PIN') {
-        await sendBilingualMessage(
-          chatId,
-          translations.messages.invalidPin.en,
-          translations.messages.invalidPin.zh
-        );
-      } else {
-        await sendBilingualMessage(
-          chatId,
-          `Error: ${error.message}`,
-          `错误: ${error.message}`
-        );
-      }
-    } finally {
-      if (state.pinMessageId) {
-        await deleteMessage(chatId, state.pinMessageId);
-      }
-      userStates.delete(chatId);
-    }
+    await handlePinInput(chatId, userId, pin);
     return;
   }
 
@@ -406,9 +402,11 @@ async function handleCommand(msg) {
     
     switch (command) {
       case 'balance':
-        return startPinVerification(chatId, 'balance');
+        await startPinVerification(chatId, msg.from.id, 'balance');
+        break;
       case 'positions':
-        return startPinVerification(chatId, 'positions');
+        await startPinVerification(chatId, msg.from.id, 'positions');
+        break;
       case 'orders':
         const pendingOrders = tradingService.getPendingOrders();
         if (pendingOrders.length === 0) {
@@ -424,13 +422,17 @@ async function handleCommand(msg) {
           pendingOrders.map(order => translations.messages.orderFormat.zh(order.orderId, order.type, order.quantity, order.symbol, order.limitPrice)).join('\n');
         return sendBilingualMessage(chatId, enMessage, zhMessage);
       case 'pnl':
-        return startPinVerification(chatId, 'pnl');
+        await startPinVerification(chatId, msg.from.id, 'pnl');
+        break;
       case 'demo':
-        return startPinVerification(chatId, 'demo');
+        await startPinVerification(chatId, msg.from.id, 'demo');
+        break;
       case 'mode':
-        return startPinVerification(chatId, 'mode');
+        await startPinVerification(chatId, msg.from.id, 'mode');
+        break;
       case 'market':
-        return startPinVerification(chatId, 'market');
+        await startPinVerification(chatId, msg.from.id, 'market');
+        break;
       case 'buy':
         if (args.length < 2) {
           return sendBilingualMessage(
@@ -449,7 +451,8 @@ async function handleCommand(msg) {
           limitPrice = parseFloat(args[3]);
         }
 
-        return startPinVerification(chatId, 'buy', { symbol, quantity, orderType, limitPrice });
+        await startPinVerification(chatId, msg.from.id, 'buy', { symbol, quantity, orderType, limitPrice });
+        break;
       case 'sell':
         if (args.length < 2) {
           return sendBilingualMessage(
@@ -468,7 +471,8 @@ async function handleCommand(msg) {
           sellLimitPrice = parseFloat(args[3]);
         }
 
-        return startPinVerification(chatId, 'sell', { symbol: sellSymbol, quantity: sellQuantity, orderType: sellOrderType, limitPrice: sellLimitPrice });
+        await startPinVerification(chatId, msg.from.id, 'sell', { symbol: sellSymbol, quantity: sellQuantity, orderType: sellOrderType, limitPrice: sellLimitPrice });
+        break;
       case 'cancel':
         if (args.length < 1) {
           return sendBilingualMessage(
@@ -477,7 +481,8 @@ async function handleCommand(msg) {
             '请提供订单ID。例如: /cancel 123456'
           );
         }
-        return startPinVerification(chatId, 'cancel', { orderId: args[0] });
+        await startPinVerification(chatId, msg.from.id, 'cancel', { orderId: args[0] });
+        break;
     }
   }
 }
