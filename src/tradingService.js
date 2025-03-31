@@ -82,7 +82,7 @@ class TradingService {
     const isDemo = await this.isDemoMode(userId);
     
     if (orderType === 'MARKET') {
-      const currentPrice = await this.getCurrentPrice(symbol);
+      const currentPrice = await this.getCurrentPrice(symbol, userId);
       const totalCost = currentPrice * quantity;
       
       // Check if user has enough balance
@@ -182,7 +182,7 @@ class TradingService {
     const isDemo = await this.isDemoMode(userId);
     
     if (orderType === 'MARKET') {
-      const currentPrice = await this.getCurrentPrice(symbol);
+      const currentPrice = await this.getCurrentPrice(symbol, userId);
       
       // Check if user has enough shares
       const { data: position } = await this.supabase
@@ -315,7 +315,7 @@ class TradingService {
 
     let totalPnL = 0;
     for (const position of positions) {
-      const currentPrice = await this.getCurrentPrice(position.symbol);
+      const currentPrice = await this.getCurrentPrice(position.symbol, userId);
       totalPnL += (currentPrice - position.avg_price) * position.quantity;
     }
 
@@ -344,7 +344,7 @@ class TradingService {
     if (error) throw error;
   }
 
-  async getCurrentPrice(symbol) {
+  async getCurrentPrice(symbol, userId) {
     const isDemo = await this.isDemoMode(userId);
     if (isDemo) {
       return this.getDemoPrice(symbol);

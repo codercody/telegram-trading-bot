@@ -40,7 +40,7 @@ CREATE TABLE order_history (
     quantity INTEGER NOT NULL,
     price DECIMAL(15,2) NOT NULL,
     type VARCHAR(4) NOT NULL CHECK (type IN ('BUY', 'SELL')),
-    order_type VARCHAR(5) NOT NULL CHECK (order_type IN ('MARKET', 'LIMIT')),
+    order_type VARCHAR(10) NOT NULL CHECK (order_type IN ('MARKET', 'LIMIT')),
     demo_mode BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
