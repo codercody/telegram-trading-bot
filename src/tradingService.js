@@ -41,14 +41,26 @@ class TradingService {
 
   async getBalance(userId) {
     await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
     const { data, error } = await this.supabase
       .from('users')
-      .select('balance')
+      .select(isDemo ? 'demo_balance' : 'live_balance')
       .eq('user_id', userId)
       .single();
 
     if (error) throw error;
-    return data.balance;
+    return isDemo ? data.demo_balance : data.live_balance;
+  }
+
+  async updateBalance(userId, newBalance) {
+    await this.initializeUser(userId);
+    const isDemo = await this.isDemoMode(userId);
+    const { error } = await this.supabase
+      .from('users')
+      .update({ [isDemo ? 'demo_balance' : 'live_balance']: newBalance })
+      .eq('user_id', userId);
+
+    if (error) throw error;
   }
 
   async getPositions(userId) {
@@ -92,12 +104,7 @@ class TradingService {
       }
 
       // Update user's balance
-      const { error: balanceError } = await this.supabase
-        .from('users')
-        .update({ balance: balance - totalCost })
-        .eq('user_id', userId);
-
-      if (balanceError) throw balanceError;
+      await this.updateBalance(userId, balance - totalCost);
 
       // Update or create position
       const { data: existingPosition } = await this.supabase
@@ -220,12 +227,7 @@ class TradingService {
 
       // Update user's balance
       const balance = await this.getBalance(userId);
-      const { error: balanceError } = await this.supabase
-        .from('users')
-        .update({ balance: balance + (currentPrice * quantity) })
-        .eq('user_id', userId);
-
-      if (balanceError) throw balanceError;
+      await this.updateBalance(userId, balance + (currentPrice * quantity));
 
       // Record order in history
       const { error: historyError } = await this.supabase

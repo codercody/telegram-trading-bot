@@ -1,7 +1,8 @@
 -- Create users table
 CREATE TABLE users (
     user_id BIGINT PRIMARY KEY,
-    balance DECIMAL(15,2) NOT NULL DEFAULT 100000.00,
+    demo_balance DECIMAL(15,2) NOT NULL DEFAULT 100000.00,
+    live_balance DECIMAL(15,2) NOT NULL DEFAULT 100000.00,
     demo_mode BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
