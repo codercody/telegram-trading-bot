@@ -3,32 +3,30 @@ const { TradingService } = require('../src/tradingService');
 // Initialize trading service
 const tradingService = new TradingService();
 
+// Helper function to escape HTML characters
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // Helper function to send bilingual messages
 async function sendBilingualMessage(chatId, enMessage, zhMessage) {
   try {
-    const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `${enMessage}\n\n${zhMessage}`,
+        text: `${escapeHtml(enMessage)}\n\n${escapeHtml(zhMessage)}`,
         parse_mode: 'HTML',
-        disable_web_page_preview: true
       }),
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Telegram API error:', errorData);
-      throw new Error(`Telegram API error: ${errorData.description}`);
-    }
-
-    return await response.json();
   } catch (error) {
     console.error('Error sending message:', error);
-    throw error;
   }
 }
 
@@ -63,7 +61,6 @@ export default async function handler(req, res) {
           
         case '/help':
           const helpEnMessage = `Available commands:
-/start - Start the bot
 /help - Show this help message
 /balance - Check your account balance
 /positions - View your current positions
@@ -76,7 +73,6 @@ export default async function handler(req, res) {
 /mode - Check current mode`;
 
           const helpZhMessage = `可用命令：
-/start - 启动机器人
 /help - 显示帮助信息
 /balance - 查看账户余额
 /positions - 查看当前持仓
@@ -88,15 +84,7 @@ export default async function handler(req, res) {
 /live - 切换到实盘模式
 /mode - 查看当前模式`;
 
-          try {
-            await sendBilingualMessage(chatId, helpEnMessage, helpZhMessage);
-          } catch (error) {
-            console.error('Error sending help message:', error);
-            // Try sending a simpler message if the help message fails
-            const fallbackEnMessage = 'Error sending help message. Please try again.';
-            const fallbackZhMessage = '发送帮助信息时出错。请重试。';
-            await sendBilingualMessage(chatId, fallbackEnMessage, fallbackZhMessage);
-          }
+          await sendBilingualMessage(chatId, helpEnMessage, helpZhMessage);
           break;
           
         case '/balance':
@@ -119,8 +107,8 @@ export default async function handler(req, res) {
             for (const position of positions) {
               const currentPrice = await tradingService.getCurrentPrice(position.symbol);
               
-              positionsEnMessage += `${position.symbol}: ${position.quantity} shares @ $${position.avg_price.toFixed(2)} (Current: $${currentPrice.toFixed(2)})\n`;
-              positionsZhMessage += `${position.symbol}: ${position.quantity} 股 @ $${position.avg_price.toFixed(2)} (当前: $${currentPrice.toFixed(2)})\n`;
+              positionsEnMessage += `${escapeHtml(position.symbol)}: ${position.quantity} shares @ $${position.avg_price.toFixed(2)} (Current: $${currentPrice.toFixed(2)})\n`;
+              positionsZhMessage += `${escapeHtml(position.symbol)}: ${position.quantity} 股 @ $${position.avg_price.toFixed(2)} (当前: $${currentPrice.toFixed(2)})\n`;
             }
             
             await sendBilingualMessage(chatId, positionsEnMessage, positionsZhMessage);
@@ -138,8 +126,8 @@ export default async function handler(req, res) {
             let ordersZhMessage = '待处理订单：\n';
             
             for (const order of orders) {
-              ordersEnMessage += `${order.symbol}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)}\n`;
-              ordersZhMessage += `${order.symbol}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)}\n`;
+              ordersEnMessage += `${escapeHtml(order.symbol)}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)}\n`;
+              ordersZhMessage += `${escapeHtml(order.symbol)}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)}\n`;
             }
             
             await sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
@@ -154,8 +142,8 @@ export default async function handler(req, res) {
           } else {
             const [buySymbol, buyQuantity] = args;
             const buyResult = await tradingService.placeBuyOrder(buySymbol, parseInt(buyQuantity));
-            const buyEnMessage = `Buy order executed: ${buyQuantity} shares of ${buySymbol} at $${buyResult.price.toFixed(2)}`;
-            const buyZhMessage = `买单已执行：${buyQuantity} 股 ${buySymbol} @ $${buyResult.price.toFixed(2)}`;
+            const buyEnMessage = `Buy order executed: ${buyQuantity} shares of ${escapeHtml(buySymbol)} at $${buyResult.price.toFixed(2)}`;
+            const buyZhMessage = `买单已执行：${buyQuantity} 股 ${escapeHtml(buySymbol)} @ $${buyResult.price.toFixed(2)}`;
             await sendBilingualMessage(chatId, buyEnMessage, buyZhMessage);
           }
           break;
@@ -168,8 +156,8 @@ export default async function handler(req, res) {
           } else {
             const [sellSymbol, sellQuantity] = args;
             const sellResult = await tradingService.placeSellOrder(sellSymbol, parseInt(sellQuantity));
-            const sellEnMessage = `Sell order executed: ${sellQuantity} shares of ${sellSymbol} at $${sellResult.price.toFixed(2)}`;
-            const sellZhMessage = `卖单已执行：${sellQuantity} 股 ${sellSymbol} @ $${sellResult.price.toFixed(2)}`;
+            const sellEnMessage = `Sell order executed: ${sellQuantity} shares of ${escapeHtml(sellSymbol)} at $${sellResult.price.toFixed(2)}`;
+            const sellZhMessage = `卖单已执行：${sellQuantity} 股 ${escapeHtml(sellSymbol)} @ $${sellResult.price.toFixed(2)}`;
             await sendBilingualMessage(chatId, sellEnMessage, sellZhMessage);
           }
           break;
@@ -182,8 +170,8 @@ export default async function handler(req, res) {
           } else {
             const orderId = args[0];
             await tradingService.cancelOrder(orderId);
-            const cancelEnMessage = `Order ${orderId} cancelled successfully`;
-            const cancelZhMessage = `订单 ${orderId} 已成功取消`;
+            const cancelEnMessage = `Order ${escapeHtml(orderId)} cancelled successfully`;
+            const cancelZhMessage = `订单 ${escapeHtml(orderId)} 已成功取消`;
             await sendBilingualMessage(chatId, cancelEnMessage, cancelZhMessage);
           }
           break;
