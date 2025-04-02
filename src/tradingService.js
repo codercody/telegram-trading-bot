@@ -270,7 +270,7 @@ class TradingService {
             symbol,
             quantity,
             limit_price: limitPrice,
-            type: 'buy',
+            type: 'BUY',
             demo_mode: isDemoMode
           }
         ]);
@@ -320,7 +320,7 @@ class TradingService {
             symbol,
             quantity,
             limit_price: limitPrice,
-            type: 'sell',
+            type: 'SELL',
             demo_mode: isDemoMode
           }
         ]);
