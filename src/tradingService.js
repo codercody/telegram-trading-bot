@@ -3,65 +3,82 @@ const { createClient } = require('@supabase/supabase-js');
 
 class TradingService {
   constructor() {
-    this.initialBalance = 30470;
-    this.demoMode = false;
-    this.pendingOrders = new Map();
-    this.lastPrices = new Map();
-    this.demoPrices = new Map();
-    this.PRICE_CACHE_DURATION = 60000; // 1 minute cache
-    
     // Initialize Supabase client
     this.supabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY
+      process.env.SUPABASE_SERVICE_KEY
     );
   }
 
-  async initializeGlobalAccount() {
-    const { data: existingAccount } = await this.supabase
-      .from('global_account')
-      .select('*')
-      .eq('id', 1)
-      .single();
+  async getCurrentPrice(symbol) {
+    // Try up to 3 times with exponential backoff
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        // Fetch real-time price from Yahoo Finance
+        const result = await yahooFinance.quote(symbol);
+        const price = result.regularMarketPrice;
 
-    if (!existingAccount) {
-      const { error } = await this.supabase
-        .from('global_account')
-        .insert([
-          {
-            id: 1,
-            demo_balance: 100000,
-            live_balance: this.initialBalance,
-            demo_mode: true
-          }
-        ]);
+        if (!price) {
+          throw new Error(`Unable to fetch price for ${symbol}`);
+        }
 
-      if (error) throw error;
+        return price;
+      } catch (error) {
+        console.error(`Attempt ${attempt} failed to fetch price for ${symbol}:`, error);
+        
+        // If this is the last attempt, throw the error
+        if (attempt === 3) {
+          throw new Error(`Failed to fetch price for ${symbol} after 3 attempts. Please try again later.`);
+        }
+        
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      }
     }
   }
 
   async getBalance() {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    const { data, error } = await this.supabase
-      .from('global_account')
-      .select(isDemo ? 'demo_balance' : 'live_balance')
-      .eq('id', 1)
-      .single();
+    try {
+      const isDemo = await this.isDemoMode();
+      const { data: user, error } = await this.supabase
+        .from('users')
+        .select(isDemo ? 'demo_balance' : 'live_balance')
+        .single();
 
-    if (error) throw error;
-    return isDemo ? data.demo_balance : data.live_balance;
+      if (error) throw error;
+      return isDemo ? user.demo_balance : user.live_balance;
+    } catch (error) {
+      console.error('Error getting balance:', error);
+      throw error;
+    }
   }
 
-  async updateBalance(newBalance) {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    const { error } = await this.supabase
-      .from('global_account')
-      .update({ [isDemo ? 'demo_balance' : 'live_balance']: newBalance })
-      .eq('id', 1);
+  async updateBalance(amount) {
+    try {
+      const isDemo = await this.isDemoMode();
+      const balanceColumn = isDemo ? 'demo_balance' : 'live_balance';
+      const { data: user, error: fetchError } = await this.supabase
+        .from('users')
+        .select(balanceColumn)
+        .single();
 
-    if (error) throw error;
+      if (fetchError) throw fetchError;
+
+      const newBalance = isDemo ? user.demo_balance + amount : user.live_balance + amount;
+      if (newBalance < 0) {
+        throw new Error('Insufficient funds');
+      }
+
+      const { error: updateError } = await this.supabase
+        .from('users')
+        .update({ [balanceColumn]: newBalance });
+
+      if (updateError) throw updateError;
+      return newBalance;
+    } catch (error) {
+      console.error('Error updating balance:', error);
+      throw error;
+    }
   }
 
   async getPositions() {
@@ -81,356 +98,246 @@ class TradingService {
   }
 
   async getPendingOrders() {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    const { data, error } = await this.supabase
-      .from('pending_orders')
-      .select('*')
-      .eq('demo_mode', isDemo)
-      .eq('is_global', true);
+    try {
+      const isDemo = await this.isDemoMode();
+      const { data: orders, error } = await this.supabase
+        .from('pending_orders')
+        .select('*')
+        .eq('demo_mode', isDemo);
 
-    if (error) throw error;
-    return data;
+      if (error) throw error;
+      return orders || [];
+    } catch (error) {
+      console.error('Error getting pending orders:', error);
+      throw error;
+    }
   }
 
-  async placeBuyOrder(symbol, quantity, orderType, limitPrice) {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    
-    if (orderType === 'MARKET') {
-      // Check market hours only for market orders in live mode
-      if (!isDemo && !this.isMarketOpen()) {
+  async placeBuyOrder(symbol, quantity, limitPrice) {
+    try {
+      const isDemoMode = await this.isDemoMode();
+      
+      // Check market hours for live mode
+      if (!isDemoMode && !this.isMarketOpen()) {
         throw new Error('Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.');
       }
-      
+
       const currentPrice = await this.getCurrentPrice(symbol);
-      const totalCost = currentPrice * quantity;
-      
-      // Check if account has enough balance
-      const balance = await this.getBalance();
-      if (balance < totalCost) {
-        throw new Error('Insufficient funds');
-      }
+      const totalCost = quantity * currentPrice;
 
-      // Update account balance
-      await this.updateBalance(balance - totalCost);
+      // Update balance
+      await this.updateBalance(-totalCost);
 
-      // Update or create position
-      const { data: existingPosition } = await this.supabase
+      // Update or insert position
+      const { data: existingPosition, error: fetchError } = await this.supabase
         .from('positions')
         .select('*')
         .eq('symbol', symbol)
-        .eq('demo_mode', isDemo)
-        .eq('is_global', true)
+        .eq('demo_mode', isDemoMode)
         .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError;
+      }
 
       if (existingPosition) {
         const newQuantity = existingPosition.quantity + quantity;
-        const newAvgPrice = ((existingPosition.avg_price * existingPosition.quantity) + (currentPrice * quantity)) / newQuantity;
-        
-        const { error: positionError } = await this.supabase
-          .from('positions')
-          .update({ quantity: newQuantity, avg_price: newAvgPrice })
-          .eq('id', existingPosition.id);
+        const newAvgPrice = (existingPosition.avg_price * existingPosition.quantity + currentPrice * quantity) / newQuantity;
 
-        if (positionError) throw positionError;
+        const { error: updateError } = await this.supabase
+          .from('positions')
+          .update({
+            quantity: newQuantity,
+            avg_price: newAvgPrice
+          })
+          .eq('symbol', symbol)
+          .eq('demo_mode', isDemoMode);
+
+        if (updateError) throw updateError;
       } else {
-        const { error: positionError } = await this.supabase
+        const { error: insertError } = await this.supabase
           .from('positions')
-          .insert([{
-            symbol,
-            quantity,
-            avg_price: currentPrice,
-            demo_mode: isDemo,
-            is_global: true
-          }]);
+          .insert([
+            {
+              symbol,
+              quantity,
+              avg_price: currentPrice,
+              demo_mode: isDemoMode
+            }
+          ]);
 
-        if (positionError) throw positionError;
+        if (insertError) throw insertError;
       }
 
-      // Record order in history
+      // Record order history
       const { error: historyError } = await this.supabase
         .from('order_history')
-        .insert([{
-          symbol,
-          quantity,
-          price: currentPrice,
-          type: 'BUY',
-          order_type: 'MARKET',
-          demo_mode: isDemo,
-          is_global: true
-        }]);
+        .insert([
+          {
+            symbol,
+            quantity,
+            price: currentPrice,
+            type: 'buy',
+            order_type: 'market',
+            demo_mode: isDemoMode
+          }
+        ]);
 
       if (historyError) throw historyError;
 
       return {
-        orderType: 'MARKET',
-        price: currentPrice
+        symbol,
+        quantity,
+        price: currentPrice,
+        totalCost
       };
-    } else {
-      // Handle limit order
-      const { data: order, error: orderError } = await this.supabase
-        .from('pending_orders')
-        .insert([{
-          symbol,
-          quantity,
-          limit_price: limitPrice,
-          type: 'BUY',
-          demo_mode: isDemo,
-          is_global: true
-        }])
-        .select()
-        .single();
-
-      if (orderError) throw orderError;
-
-      return {
-        orderType: 'LIMIT',
-        message: `Limit buy order placed for ${quantity} shares of ${symbol} at $${limitPrice.toFixed(2)}`
-      };
+    } catch (error) {
+      console.error('Error placing buy order:', error);
+      throw error;
     }
   }
 
-  async placeSellOrder(symbol, quantity, orderType, limitPrice) {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    
-    if (orderType === 'MARKET') {
-      // Check market hours only for market orders in live mode
-      if (!isDemo && !this.isMarketOpen()) {
+  async placeSellOrder(symbol, quantity, limitPrice) {
+    try {
+      const isDemoMode = await this.isDemoMode();
+      
+      // Check market hours for live mode
+      if (!isDemoMode && !this.isMarketOpen()) {
         throw new Error('Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.');
       }
-      
+
       const currentPrice = await this.getCurrentPrice(symbol);
-      
+      const totalProceeds = quantity * currentPrice;
+
       // Check if account has enough shares
-      const { data: position } = await this.supabase
+      const { data: position, error: fetchError } = await this.supabase
         .from('positions')
         .select('*')
         .eq('symbol', symbol)
-        .eq('demo_mode', isDemo)
-        .eq('is_global', true)
+        .eq('demo_mode', isDemoMode)
         .single();
 
+      if (fetchError) throw fetchError;
       if (!position || position.quantity < quantity) {
         throw new Error('Insufficient shares');
       }
 
+      // Update balance
+      await this.updateBalance(totalProceeds);
+
       // Update position
-      if (position.quantity === quantity) {
+      const newQuantity = position.quantity - quantity;
+      if (newQuantity === 0) {
         const { error: deleteError } = await this.supabase
           .from('positions')
           .delete()
-          .eq('id', position.id);
+          .eq('symbol', symbol)
+          .eq('demo_mode', isDemoMode);
 
         if (deleteError) throw deleteError;
       } else {
         const { error: updateError } = await this.supabase
           .from('positions')
-          .update({ quantity: position.quantity - quantity })
-          .eq('id', position.id);
+          .update({ quantity: newQuantity })
+          .eq('symbol', symbol)
+          .eq('demo_mode', isDemoMode);
 
         if (updateError) throw updateError;
       }
 
-      // Update account balance
-      const balance = await this.getBalance();
-      await this.updateBalance(balance + (currentPrice * quantity));
-
-      // Record order in history
+      // Record order history
       const { error: historyError } = await this.supabase
         .from('order_history')
-        .insert([{
-          symbol,
-          quantity,
-          price: currentPrice,
-          type: 'SELL',
-          order_type: 'MARKET',
-          demo_mode: isDemo,
-          is_global: true
-        }]);
+        .insert([
+          {
+            symbol,
+            quantity,
+            price: currentPrice,
+            type: 'sell',
+            order_type: 'market',
+            demo_mode: isDemoMode
+          }
+        ]);
 
       if (historyError) throw historyError;
 
       return {
-        orderType: 'MARKET',
-        price: currentPrice
+        symbol,
+        quantity,
+        price: currentPrice,
+        totalProceeds
       };
-    } else {
-      // Handle limit order
-      const { data: order, error: orderError } = await this.supabase
-        .from('pending_orders')
-        .insert([{
-          symbol,
-          quantity,
-          limit_price: limitPrice,
-          type: 'SELL',
-          demo_mode: isDemo,
-          is_global: true
-        }])
-        .select()
-        .single();
-
-      if (orderError) throw orderError;
-
-      return {
-        orderType: 'LIMIT',
-        message: `Limit sell order placed for ${quantity} shares of ${symbol} at $${limitPrice.toFixed(2)}`
-      };
+    } catch (error) {
+      console.error('Error placing sell order:', error);
+      throw error;
     }
   }
 
   async cancelOrder(orderId) {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    
-    const { data: order, error: orderError } = await this.supabase
-      .from('pending_orders')
-      .select('*')
-      .eq('id', orderId)
-      .eq('demo_mode', isDemo)
-      .eq('is_global', true)
-      .single();
+    try {
+      const isDemo = await this.isDemoMode();
+      const { error } = await this.supabase
+        .from('pending_orders')
+        .delete()
+        .eq('id', orderId)
+        .eq('demo_mode', isDemo);
 
-    if (orderError) throw orderError;
-    if (!order) throw new Error('Order not found');
-
-    const { error: deleteError } = await this.supabase
-      .from('pending_orders')
-      .delete()
-      .eq('id', orderId);
-
-    if (deleteError) throw deleteError;
-
-    return {
-      type: order.type,
-      symbol: order.symbol,
-      quantity: order.quantity,
-      limitPrice: order.limit_price
-    };
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Error cancelling order:', error);
+      throw error;
+    }
   }
 
   async isDemoMode() {
-    await this.initializeGlobalAccount();
-    const { data, error } = await this.supabase
-      .from('global_account')
-      .select('demo_mode')
-      .eq('id', 1)
-      .single();
+    try {
+      const { data: user, error } = await this.supabase
+        .from('users')
+        .select('demo_mode')
+        .single();
 
-    if (error) throw error;
-    return data.demo_mode;
+      if (error) throw error;
+      return user.demo_mode;
+    } catch (error) {
+      console.error('Error checking demo mode:', error);
+      throw error;
+    }
   }
 
   async setDemoMode(enabled) {
-    await this.initializeGlobalAccount();
-    const { error } = await this.supabase
-      .from('global_account')
-      .update({ demo_mode: enabled })
-      .eq('id', 1);
+    try {
+      const { error } = await this.supabase
+        .from('users')
+        .update({ demo_mode: enabled });
 
-    if (error) throw error;
-  }
-
-  async getCurrentPrice(symbol) {
-    const isDemo = await this.isDemoMode();
-    if (isDemo) {
-      return this.getDemoPrice(symbol);
+      if (error) throw error;
+      return enabled;
+    } catch (error) {
+      console.error('Error setting demo mode:', error);
+      throw error;
     }
-
-    // Check if we have a cached price that's still valid
-    const now = Date.now();
-    const lastUpdate = this.lastPrices.get(symbol) || 0;
-    
-    if (this.lastPrices.has(symbol) && (now - lastUpdate) < this.PRICE_CACHE_DURATION) {
-      return this.lastPrices.get(symbol);
-    }
-
-    // Try up to 3 times with exponential backoff
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        // Fetch real-time price from Yahoo Finance
-        const result = await yahooFinance.quote(symbol);
-        const price = result.regularMarketPrice;
-
-        if (!price) {
-          throw new Error(`Unable to fetch price for ${symbol}`);
-        }
-
-        // Update cache
-        this.lastPrices.set(symbol, price);
-
-        return price;
-      } catch (error) {
-        console.error(`Attempt ${attempt} failed to fetch price for ${symbol}:`, error);
-        
-        // If this is the last attempt, throw the error
-        if (attempt === 3) {
-          throw new Error(`Failed to fetch price for ${symbol} after 3 attempts. Please try again later.`);
-        }
-        
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-      }
-    }
-  }
-
-  getDemoPrice(symbol) {
-    if (!this.demoPrices.has(symbol)) {
-      this.demoPrices.set(symbol, 100); // Initialize new symbols at $100
-    }
-
-    const currentPrice = this.demoPrices.get(symbol);
-    const volatility = 0.1; // 10% volatility
-    const randomFactor = 1 + (Math.random() * 2 - 1) * volatility;
-    const newPrice = currentPrice * randomFactor;
-
-    // Update the demo price
-    this.demoPrices.set(symbol, newPrice);
-
-    return newPrice;
   }
 
   isMarketOpen() {
+    // Get current time in Eastern Time
     const now = new Date();
-    const day = now.getDay();
+    const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const day = etTime.getDay();
+    const hour = etTime.getHours();
+    const minute = etTime.getMinutes();
     
     // Check if it's a weekday (Monday = 1, Friday = 5)
     if (day === 0 || day === 6) {
       return false;
     }
 
-    // Convert to Eastern Time (UTC-4/UTC-5)
-    const isDST = this.isDST(now);
-    const etOffset = isDST ? -4 : -5;
-    const etHour = now.getUTCHours() + etOffset;
-    const etMinute = now.getUTCMinutes();
-
     // Market hours: 9:30 AM - 4:00 PM ET
-    if (etHour < 9 || (etHour === 9 && etMinute < 30) || etHour >= 16) {
+    if (hour < 9 || (hour === 9 && minute < 30) || hour >= 16) {
       return false;
     }
 
     return true;
-  }
-
-  isDST(date) {
-    const year = date.getUTCFullYear();
-    const firstSunday = new Date(Date.UTC(year, 2, 1));
-    const lastSunday = new Date(Date.UTC(year, 10, 1));
-    
-    // Find the second Sunday in March
-    while (firstSunday.getUTCDay() !== 0) {
-      firstSunday.setUTCDate(firstSunday.getUTCDate() + 1);
-    }
-    firstSunday.setUTCDate(firstSunday.getUTCDate() + 7);
-    
-    // Find the first Sunday in November
-    while (lastSunday.getUTCDay() !== 0) {
-      lastSunday.setUTCDate(lastSunday.getUTCDate() + 1);
-    }
-    
-    return date >= firstSunday && date < lastSunday;
   }
 }
 
