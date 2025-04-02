@@ -1,8 +1,6 @@
-const express = require('express');
 const { TradingService } = require('../src/tradingService');
-const app = express();
-app.use(express.json());
 
+// Initialize trading service
 const tradingService = new TradingService();
 
 // Helper function to send bilingual messages
@@ -43,7 +41,7 @@ async function deleteMessage(chatId, messageId) {
 }
 
 // Handle incoming webhook requests
-app.post('/webhook', async (req, res) => {
+module.exports = async (req, res) => {
   try {
     const update = req.body;
     
@@ -78,7 +76,7 @@ app.post('/webhook', async (req, res) => {
         );
       }
       
-      return res.sendStatus(200);
+      return res.status(200).json({ ok: true });
     }
     
     // Handle text messages
@@ -372,14 +370,9 @@ Available commands:
       }
     }
     
-    res.sendStatus(200);
+    res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Error handling webhook:', error);
-    res.sendStatus(500);
+    res.status(500).json({ error: error.message });
   }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-}); 
+}; 
