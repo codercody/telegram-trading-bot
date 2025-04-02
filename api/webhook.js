@@ -6,7 +6,7 @@ const tradingService = new TradingService();
 // Helper function to send bilingual messages
 async function sendBilingualMessage(chatId, enMessage, zhMessage) {
   try {
-    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -15,10 +15,20 @@ async function sendBilingualMessage(chatId, enMessage, zhMessage) {
         chat_id: chatId,
         text: `${enMessage}\n\n${zhMessage}`,
         parse_mode: 'HTML',
+        disable_web_page_preview: true
       }),
     });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Telegram API error:', errorData);
+      throw new Error(`Telegram API error: ${errorData.description}`);
+    }
+
+    return await response.json();
   } catch (error) {
     console.error('Error sending message:', error);
+    throw error;
   }
 }
 
@@ -78,7 +88,15 @@ export default async function handler(req, res) {
 /live - 切换到实盘模式
 /mode - 查看当前模式`;
 
-          await sendBilingualMessage(chatId, helpEnMessage, helpZhMessage);
+          try {
+            await sendBilingualMessage(chatId, helpEnMessage, helpZhMessage);
+          } catch (error) {
+            console.error('Error sending help message:', error);
+            // Try sending a simpler message if the help message fails
+            const fallbackEnMessage = 'Error sending help message. Please try again.';
+            const fallbackZhMessage = '发送帮助信息时出错。请重试。';
+            await sendBilingualMessage(chatId, fallbackEnMessage, fallbackZhMessage);
+          }
           break;
           
         case '/balance':
