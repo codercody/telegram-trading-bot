@@ -65,16 +65,18 @@ class TradingService {
   }
 
   async getPositions() {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    const { data, error } = await this.supabase
-      .from('positions')
-      .select('*')
-      .eq('demo_mode', isDemo)
-      .eq('is_global', true);
+    try {
+      const { data: positions, error } = await this.supabase
+        .from('positions')
+        .select('*')
+        .eq('demo_mode', this.demoMode);
 
-    if (error) throw error;
-    return data;
+      if (error) throw error;
+      return positions || [];
+    } catch (error) {
+      console.error('Error getting positions:', error);
+      throw error;
+    }
   }
 
   async getPendingOrders() {
@@ -305,26 +307,6 @@ class TradingService {
       quantity: order.quantity,
       limitPrice: order.limit_price
     };
-  }
-
-  async getPnL() {
-    await this.initializeGlobalAccount();
-    const isDemo = await this.isDemoMode();
-    const { data: positions, error: positionsError } = await this.supabase
-      .from('positions')
-      .select('*')
-      .eq('demo_mode', isDemo)
-      .eq('is_global', true);
-
-    if (positionsError) throw positionsError;
-
-    let totalPnL = 0;
-    for (const position of positions) {
-      const currentPrice = await this.getCurrentPrice(position.symbol);
-      totalPnL += (currentPrice - position.avg_price) * position.quantity;
-    }
-
-    return totalPnL;
   }
 
   async isDemoMode() {

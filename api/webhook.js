@@ -100,7 +100,6 @@ module.exports = async (req, res) => {
 Available commands:
 /balance - Check your balance
 /positions - View your positions
-/pnl - Calculate your P&L
 /demo - Toggle demo mode
 /mode - Check current mode
 /market - Check if market is open
@@ -113,7 +112,6 @@ Available commands:
 可用命令:
 /balance - 查看余额
 /positions - 查看持仓
-/pnl - 计算盈亏
 /demo - 切换演示模式
 /mode - 检查当前模式
 /market - 检查市场是否开放
@@ -150,24 +148,13 @@ Available commands:
               
               for (const position of positions) {
                 const currentPrice = await tradingService.getCurrentPrice(position.symbol);
-                const pnl = (currentPrice - position.avg_price) * position.quantity;
-                const pnlPercent = ((currentPrice - position.avg_price) / position.avg_price) * 100;
                 
-                positionsEnMessage += `${position.symbol}: ${position.quantity} shares @ $${position.avg_price.toFixed(2)} (Current: $${currentPrice.toFixed(2)}, P&L: $${pnl.toFixed(2)}, ${pnlPercent.toFixed(2)}%)\n`;
-                positionsZhMessage += `${position.symbol}: ${position.quantity} 股 @ $${position.avg_price.toFixed(2)} (当前: $${currentPrice.toFixed(2)}, 盈亏: $${pnl.toFixed(2)}, ${pnlPercent.toFixed(2)}%)\n`;
+                positionsEnMessage += `${position.symbol}: ${position.quantity} shares @ $${position.avg_price.toFixed(2)} (Current: $${currentPrice.toFixed(2)})\n`;
+                positionsZhMessage += `${position.symbol}: ${position.quantity} 股 @ $${position.avg_price.toFixed(2)} (当前: $${currentPrice.toFixed(2)})\n`;
               }
               
               await sendBilingualMessage(chatId, positionsEnMessage, positionsZhMessage);
             }
-            break;
-            
-          case '/pnl':
-            const pnl = await tradingService.getPnL();
-            await sendBilingualMessage(
-              chatId,
-              `Total P&L: $${pnl.toFixed(2)}`,
-              `总盈亏: $${pnl.toFixed(2)}`
-            );
             break;
             
           case '/demo':
