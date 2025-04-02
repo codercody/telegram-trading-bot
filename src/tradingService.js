@@ -133,6 +133,8 @@ class TradingService {
           interval: '1d'
         });
 
+        console.log(`${new Date(order.created_at).toTimeString()} ${new Date().toTimeString()} ${history.length}`)
+
         if (history.length === 0) continue;
 
         // Find min/max price in the period
