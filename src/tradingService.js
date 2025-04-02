@@ -66,10 +66,11 @@ class TradingService {
 
   async getPositions() {
     try {
+      const isDemo = await this.isDemoMode();
       const { data: positions, error } = await this.supabase
         .from('positions')
         .select('*')
-        .eq('demo_mode', this.demoMode);
+        .eq('demo_mode', isDemo);
 
       if (error) throw error;
       return positions || [];
