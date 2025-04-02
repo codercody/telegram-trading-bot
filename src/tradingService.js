@@ -130,7 +130,7 @@ class TradingService {
         const history = await yahooFinance.historical(order.symbol, {
           period1: new Date(order.created_at),
           period2: new Date(),
-          interval: '1m'
+          interval: '1d'
         });
 
         if (history.length === 0) continue;
