@@ -151,8 +151,8 @@ export default async function handler(req, res) {
               let ordersZhMessage = '待处理订单：\n';
               
               for (const order of orders) {
-                ordersEnMessage += `${escapeHtml(order.symbol)}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)} (${order.type})\n`;
-                ordersZhMessage += `${escapeHtml(order.symbol)}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)} (${order.type === 'buy' ? '买入' : '卖出'})\n`;
+                ordersEnMessage += `[${order.id}] ${escapeHtml(order.symbol)}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)} (${order.type})\n`;
+                ordersZhMessage += `[${order.id}] ${escapeHtml(order.symbol)}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)} (${order.type === 'buy' ? '买入' : '卖出'})\n`;
               }
               
               await sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
