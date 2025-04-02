@@ -72,7 +72,8 @@ class TradingService {
 
       const { error: updateError } = await this.supabase
         .from('global_account')
-        .update({ [balanceField]: newBalance });
+        .update({ [balanceField]: newBalance })
+        .eq('id', 1);
 
       if (updateError) throw updateError;
     } catch (error) {
@@ -277,7 +278,8 @@ class TradingService {
     try {
       const { error } = await this.supabase
         .from('global_account')
-        .update({ demo_mode: isDemo });
+        .update({ demo_mode: isDemo })
+        .eq('id', 1);
 
       if (error) throw error;
     } catch (error) {
