@@ -250,8 +250,8 @@ class TradingService {
 
       const currentPrice = await this.getCurrentPrice(symbol);
       
-      // If limit price is better than current price, execute immediately
-      if (limitPrice >= currentPrice) {
+      // For market orders (no limit price) or if limit price is better than current price, execute immediately
+      if (!limitPrice || limitPrice >= currentPrice) {
         await this.executeBuyOrder(symbol, quantity, currentPrice);
         return {
           symbol,
@@ -262,7 +262,7 @@ class TradingService {
         };
       }
 
-      // Otherwise, place as pending order
+      // For limit orders, place as pending order
       const { error: insertError } = await this.supabase
         .from('pending_orders')
         .insert([
@@ -300,8 +300,8 @@ class TradingService {
 
       const currentPrice = await this.getCurrentPrice(symbol);
       
-      // If limit price is better than current price, execute immediately
-      if (limitPrice <= currentPrice) {
+      // For market orders (no limit price) or if limit price is better than current price, execute immediately
+      if (!limitPrice || limitPrice <= currentPrice) {
         await this.executeSellOrder(symbol, quantity, currentPrice);
         return {
           symbol,
@@ -312,7 +312,7 @@ class TradingService {
         };
       }
 
-      // Otherwise, place as pending order
+      // For limit orders, place as pending order
       const { error: insertError } = await this.supabase
         .from('pending_orders')
         .insert([

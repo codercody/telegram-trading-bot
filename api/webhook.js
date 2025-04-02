@@ -48,9 +48,9 @@ export default async function handler(req, res) {
   try {
     const update = req.body;
     
-    // Only handle text messages
+    // Silently ignore non-text messages
     if (!update.message || !update.message.text) {
-      throw new Error('Only text messages are supported');
+      return res.status(200).json({ ok: true });
     }
 
     const chatId = update.message.chat.id;
