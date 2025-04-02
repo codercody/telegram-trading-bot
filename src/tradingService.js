@@ -39,14 +39,14 @@ class TradingService {
 
   async getBalance() {
     try {
-      const isDemo = await this.isDemoMode();
-      const { data: user, error } = await this.supabase
-        .from('users')
-        .select(isDemo ? 'demo_balance' : 'live_balance')
+      const isDemoMode = await this.isDemoMode();
+      const { data, error } = await this.supabase
+        .from('global_account')
+        .select(isDemoMode ? 'demo_balance' : 'live_balance')
         .single();
 
       if (error) throw error;
-      return isDemo ? user.demo_balance : user.live_balance;
+      return isDemoMode ? data.demo_balance : data.live_balance;
     } catch (error) {
       console.error('Error getting balance:', error);
       throw error;
@@ -55,26 +55,26 @@ class TradingService {
 
   async updateBalance(amount) {
     try {
-      const isDemo = await this.isDemoMode();
-      const balanceColumn = isDemo ? 'demo_balance' : 'live_balance';
-      const { data: user, error: fetchError } = await this.supabase
-        .from('users')
-        .select(balanceColumn)
+      const isDemoMode = await this.isDemoMode();
+      const balanceField = isDemoMode ? 'demo_balance' : 'live_balance';
+      
+      const { data: currentData, error: fetchError } = await this.supabase
+        .from('global_account')
+        .select(balanceField)
         .single();
 
       if (fetchError) throw fetchError;
 
-      const newBalance = isDemo ? user.demo_balance + amount : user.live_balance + amount;
+      const newBalance = currentData[balanceField] + amount;
       if (newBalance < 0) {
         throw new Error('Insufficient funds');
       }
 
       const { error: updateError } = await this.supabase
-        .from('users')
-        .update({ [balanceColumn]: newBalance });
+        .from('global_account')
+        .update({ [balanceField]: newBalance });
 
       if (updateError) throw updateError;
-      return newBalance;
     } catch (error) {
       console.error('Error updating balance:', error);
       throw error;
@@ -260,27 +260,26 @@ class TradingService {
 
   async isDemoMode() {
     try {
-      const { data: user, error } = await this.supabase
-        .from('users')
+      const { data, error } = await this.supabase
+        .from('global_account')
         .select('demo_mode')
         .single();
 
       if (error) throw error;
-      return user.demo_mode;
+      return data.demo_mode;
     } catch (error) {
       console.error('Error checking demo mode:', error);
       throw error;
     }
   }
 
-  async setDemoMode(enabled) {
+  async setDemoMode(isDemo) {
     try {
       const { error } = await this.supabase
-        .from('users')
-        .update({ demo_mode: enabled });
+        .from('global_account')
+        .update({ demo_mode: isDemo });
 
       if (error) throw error;
-      return enabled;
     } catch (error) {
       console.error('Error setting demo mode:', error);
       throw error;
