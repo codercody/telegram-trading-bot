@@ -1,387 +1,385 @@
+const express = require('express');
 const { TradingService } = require('../src/tradingService');
-const { createClient } = require('@supabase/supabase-js');
+const app = express();
+app.use(express.json());
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
-
-// Initialize trading service
 const tradingService = new TradingService();
-
-// Remove PIN-related translations
-const translations = {
-  welcome: {
-    en: `Welcome to the Mock Trading Bot! 🚀\n\nAvailable commands:\n`,
-    zh: `欢迎使用模拟交易机器人！🚀\n\n可用命令：\n`
-  },
-  commands: {
-    balance: {
-      en: `/balance - Check your account balance`,
-      zh: `/balance - 查看账户余额`
-    },
-    positions: {
-      en: `/positions - View your current positions`,
-      zh: `/positions - 查看当前持仓`
-    },
-    pnl: {
-      en: `/pnl - Check your profit/loss`,
-      zh: `/pnl - 查看盈亏情况`
-    },
-    buy: {
-      en: `/buy <symbol> <quantity> [limit <price>] - Place a buy order`,
-      zh: `/buy <股票代码> <数量> [limit <价格>] - 下买单`
-    },
-    sell: {
-      en: `/sell <symbol> <quantity> [limit <price>] - Place a sell order`,
-      zh: `/sell <股票代码> <数量> [limit <价格>] - 下卖单`
-    },
-    orders: {
-      en: `/orders - View your pending limit orders`,
-      zh: `/orders - 查看待执行的限价单`
-    },
-    demo: {
-      en: `/demo - Toggle demo mode (simulated prices)`,
-      zh: `/demo - 切换演示模式（模拟价格）`
-    },
-    mode: {
-      en: `/mode - Show current trading mode`,
-      zh: `/mode - 显示当前交易模式`
-    },
-    market: {
-      en: `/market - Check if market is open`,
-      zh: `/market - 检查市场是否开放`
-    },
-    help: {
-      en: `/help - Show this help message`,
-      zh: `/help - 显示帮助信息`
-    },
-    cancel: {
-      en: `/cancel <orderId> - Cancel a pending limit order`,
-      zh: `/cancel <订单ID> - 取消待执行的限价单`
-    }
-  },
-  messages: {
-    noPositions: {
-      en: 'You have no open positions.',
-      zh: '您当前没有持仓。'
-    },
-    positions: {
-      en: 'Your current positions:\n',
-      zh: '您的当前持仓：\n'
-    },
-    positionFormat: {
-      en: (symbol, quantity, avgPrice) => `${symbol}: ${quantity} shares (Avg Price: $${avgPrice.toFixed(2)})`,
-      zh: (symbol, quantity, avgPrice) => `${symbol}: ${quantity} 股 (平均价格: $${avgPrice.toFixed(2)})`
-    },
-    noPendingOrders: {
-      en: 'You have no pending orders.',
-      zh: '您没有待执行的订单。'
-    },
-    pendingOrders: {
-      en: 'Your pending orders:\n',
-      zh: '您的待执行订单：\n'
-    },
-    orderFormat: {
-      en: (orderId, type, quantity, symbol, price) => `ID: ${orderId}\n${type} ${quantity} ${symbol} @ $${price.toFixed(2)}`,
-      zh: (orderId, type, quantity, symbol, price) => `ID: ${orderId}\n${type === 'BUY' ? '买入' : '卖出'} ${quantity} ${symbol} @ $${price.toFixed(2)}`
-    },
-    balance: {
-      en: (amount) => `Your current balance: $${amount.toFixed(2)}`,
-      zh: (amount) => `您的当前余额: $${amount.toFixed(2)}`
-    },
-    pnl: {
-      en: (amount) => `Your current P&L: $${amount.toFixed(2)}`,
-      zh: (amount) => `您的当前盈亏: $${amount.toFixed(2)}`
-    },
-    marketOrderExecuted: {
-      en: (type, symbol, quantity, price) => `Market ${type.toLowerCase()} order executed!\nSymbol: ${symbol}\nQuantity: ${quantity}\nPrice: $${price.toFixed(2)}`,
-      zh: (type, symbol, quantity, price) => `市价${type === 'BUY' ? '买入' : '卖出'}订单已执行！\n股票代码: ${symbol}\n数量: ${quantity}\n价格: $${price.toFixed(2)}`
-    },
-    limitOrderPlaced: {
-      en: (message) => message,
-      zh: (message) => message.replace('Limit', '限价').replace('buy', '买入').replace('sell', '卖出').replace('shares of', '股')
-    },
-    demoMode: {
-      en: (enabled) => `Demo mode ${enabled ? 'enabled' : 'disabled'}. You are now using ${enabled ? 'simulated' : 'real'} market prices.`,
-      zh: (enabled) => `演示模式已${enabled ? '启用' : '禁用'}。您现在使用${enabled ? '模拟' : '实时'}市场价格。`
-    },
-    currentMode: {
-      en: (isDemo) => `Current trading mode: ${isDemo ? 'Demo Mode (simulated prices)' : 'Live Mode (real market prices)'}`,
-      zh: (isDemo) => `当前交易模式: ${isDemo ? '演示模式（模拟价格）' : '实盘模式（实时价格）'}`
-    },
-    marketStatus: {
-      en: (isOpen, time) => `Market is currently ${isOpen ? 'OPEN' : 'CLOSED'} (ET: ${time})`,
-      zh: (isOpen, time) => `市场当前${isOpen ? '开放' : '关闭'} (美东时间: ${time})`
-    },
-    orderCancelled: {
-      en: (type, symbol, quantity, price) => `Order cancelled successfully!\nType: ${type}\nSymbol: ${symbol}\nQuantity: ${quantity}\nLimit Price: $${price.toFixed(2)}`,
-      zh: (type, symbol, quantity, price) => `订单已成功取消！\n类型: ${type === 'BUY' ? '买入' : '卖出'}\n股票代码: ${symbol}\n数量: ${quantity}\n限价: $${price.toFixed(2)}`
-    },
-    orderNotFound: {
-      en: 'Order not found. Please check the order ID and try again.',
-      zh: '未找到订单。请检查订单ID后重试。'
-    },
-    error: {
-      en: (message) => `Error: ${message}`,
-      zh: (message) => `错误: ${message}`
-    }
-  }
-};
 
 // Helper function to send bilingual messages
 async function sendBilingualMessage(chatId, enMessage, zhMessage) {
-  const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: `${enMessage}\n\n${zhMessage}`,
-    }),
-  });
-  return response.json();
+  try {
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: `${enMessage}\n\n${zhMessage}`,
+        parse_mode: 'HTML',
+      }),
+    });
+  } catch (error) {
+    console.error('Error sending message:', error);
+  }
 }
 
-// Command handlers
-async function handleCommand(msg) {
-  const chatId = msg.chat.id;
-  const text = msg.text;
-  const userId = msg.from.id;
+// Helper function to delete a message
+async function deleteMessage(chatId, messageId) {
+  try {
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/deleteMessage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+      }),
+    });
+  } catch (error) {
+    console.error('Error deleting message:', error);
+  }
+}
 
-  // Handle commands
-  if (text.startsWith('/')) {
-    const [command, ...args] = text.slice(1).split(' ');
+// Handle incoming webhook requests
+app.post('/webhook', async (req, res) => {
+  try {
+    const update = req.body;
     
-    try {
-      switch (command) {
-        case 'start':
-          const welcomeEnMessage = translations.welcome.en + Object.values(translations.commands).map(cmd => cmd.en).join('\n');
-          const welcomeZhMessage = translations.welcome.zh + Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
-          return sendBilingualMessage(chatId, welcomeEnMessage, welcomeZhMessage);
-
-        case 'help':
-          const helpEnMessage = Object.values(translations.commands).map(cmd => cmd.en).join('\n');
-          const helpZhMessage = Object.values(translations.commands).map(cmd => cmd.zh).join('\n');
-          return sendBilingualMessage(chatId, helpEnMessage, helpZhMessage);
-
-        case 'balance':
-          const balance = await tradingService.getBalance(userId);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.balance.en(balance),
-            translations.messages.balance.zh(balance)
-          );
-          break;
-
-        case 'positions':
-          const positions = await tradingService.getPositions(userId);
-          if (positions.length === 0) {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.noPositions.en,
-              translations.messages.noPositions.zh
-            );
-          } else {
-            const enMessage = translations.messages.positions.en + 
-              positions.map(pos => translations.messages.positionFormat.en(pos.symbol, pos.quantity, pos.avg_price)).join('\n');
-            
-            const zhMessage = translations.messages.positions.zh + 
-              positions.map(pos => translations.messages.positionFormat.zh(pos.symbol, pos.quantity, pos.avg_price)).join('\n');
-            
-            await sendBilingualMessage(chatId, enMessage, zhMessage);
-          }
-          break;
-
-        case 'orders':
-          const pendingOrders = await tradingService.getPendingOrders(userId);
-          if (pendingOrders.length === 0) {
-            return sendBilingualMessage(
-              chatId,
-              translations.messages.noPendingOrders.en,
-              translations.messages.noPendingOrders.zh
-            );
-          }
-          const ordersEnMessage = translations.messages.pendingOrders.en + 
-            pendingOrders.map(order => translations.messages.orderFormat.en(order.id, order.type, order.quantity, order.symbol, order.limit_price)).join('\n');
-          const ordersZhMessage = translations.messages.pendingOrders.zh + 
-            pendingOrders.map(order => translations.messages.orderFormat.zh(order.id, order.type, order.quantity, order.symbol, order.limit_price)).join('\n');
-          return sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
-
-        case 'pnl':
-          const pnl = await tradingService.getPnL(userId);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.pnl.en(pnl),
-            translations.messages.pnl.zh(pnl)
-          );
-          break;
-
-        case 'demo':
-          const currentMode = await tradingService.isDemoMode(userId);
-          await tradingService.setDemoMode(!currentMode, userId);
-          const newMode = await tradingService.isDemoMode(userId);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.demoMode.en(newMode),
-            translations.messages.demoMode.zh(newMode)
-          );
-          break;
-
-        case 'mode':
-          const isDemo = await tradingService.isDemoMode(userId);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.currentMode.en(isDemo),
-            translations.messages.currentMode.zh(isDemo)
-          );
-          break;
-
-        case 'market':
-          const isOpen = tradingService.isMarketOpen();
-          const now = new Date();
-          const etTime = new Date(now.getTime() + (tradingService.isDST(now) ? -4 : -5) * 60 * 60 * 1000);
-          const timeString = etTime.toLocaleTimeString('en-US', { timeZone: 'America/New_York' });
-          
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.marketStatus.en(isOpen, timeString),
-            translations.messages.marketStatus.zh(isOpen, timeString)
-          );
-          break;
-
-        case 'buy':
-          if (args.length < 2) {
-            return sendBilingualMessage(
-              chatId,
-              'Please provide both symbol and quantity. Example: /buy AAPL 10 or /buy AAPL 10 limit 150.50',
-              '请提供股票代码和数量。例如: /buy AAPL 10 或 /buy AAPL 10 limit 150.50'
-            );
-          }
-          const symbol = args[0];
-          const quantity = parseInt(args[1]);
-          let orderType = 'MARKET';
-          let limitPrice = null;
-
-          if (args.length >= 4 && args[2].toLowerCase() === 'limit') {
-            orderType = 'LIMIT';
-            limitPrice = parseFloat(args[3]);
-          }
-
-          const buyResult = await tradingService.placeBuyOrder(
-            symbol,
-            quantity,
-            orderType,
-            limitPrice,
-            userId
-          );
-          if (buyResult.orderType === 'MARKET') {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.marketOrderExecuted.en('BUY', symbol, quantity, buyResult.price),
-              translations.messages.marketOrderExecuted.zh('BUY', symbol, quantity, buyResult.price)
-            );
-          } else {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.limitOrderPlaced.en(buyResult.message),
-              translations.messages.limitOrderPlaced.zh(buyResult.message)
-            );
-          }
-          break;
-
-        case 'sell':
-          if (args.length < 2) {
-            return sendBilingualMessage(
-              chatId,
-              'Please provide both symbol and quantity. Example: /sell AAPL 10 or /sell AAPL 10 limit 150.50',
-              '请提供股票代码和数量。例如: /sell AAPL 10 或 /sell AAPL 10 limit 150.50'
-            );
-          }
-          const sellSymbol = args[0];
-          const sellQuantity = parseInt(args[1]);
-          let sellOrderType = 'MARKET';
-          let sellLimitPrice = null;
-
-          if (args.length >= 4 && args[2].toLowerCase() === 'limit') {
-            sellOrderType = 'LIMIT';
-            sellLimitPrice = parseFloat(args[3]);
-          }
-
-          const sellResult = await tradingService.placeSellOrder(
-            sellSymbol,
-            sellQuantity,
-            sellOrderType,
-            sellLimitPrice,
-            userId
-          );
-          if (sellResult.orderType === 'MARKET') {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.marketOrderExecuted.en('SELL', sellSymbol, sellQuantity, sellResult.price),
-              translations.messages.marketOrderExecuted.zh('SELL', sellSymbol, sellQuantity, sellResult.price)
-            );
-          } else {
-            await sendBilingualMessage(
-              chatId,
-              translations.messages.limitOrderPlaced.en(sellResult.message),
-              translations.messages.limitOrderPlaced.zh(sellResult.message)
-            );
-          }
-          break;
-
-        case 'cancel':
-          if (args.length < 1) {
-            return sendBilingualMessage(
-              chatId,
-              'Please provide an order ID. Example: /cancel 123456',
-              '请提供订单ID。例如: /cancel 123456'
-            );
-          }
-          const cancelResult = await tradingService.cancelOrder(args[0], userId);
-          await sendBilingualMessage(
-            chatId,
-            translations.messages.orderCancelled.en(cancelResult.type, cancelResult.symbol, cancelResult.quantity, cancelResult.limitPrice),
-            translations.messages.orderCancelled.zh(cancelResult.type, cancelResult.symbol, cancelResult.quantity, cancelResult.limitPrice)
-          );
-          break;
-
-        default:
-          return sendBilingualMessage(
-            chatId,
-            'Unknown command. Use /help to see available commands.',
-            '未知命令。使用 /help 查看可用命令。'
-          );
-      }
-    } catch (error) {
-      await sendBilingualMessage(
-        chatId,
-        translations.messages.error.en(error.message),
-        translations.messages.error.zh(error.message)
-      );
-    }
-  }
-}
-
-// Main webhook handler
-module.exports = async (req, res) => {
-  if (req.method === 'POST') {
-    try {
-      const update = req.body;
+    // Handle callback queries (button clicks)
+    if (update.callback_query) {
+      const callbackQuery = update.callback_query;
+      const chatId = callbackQuery.message.chat.id;
+      const data = callbackQuery.data;
       
-      // Handle Telegram webhook update
-      if (update.message) {
-        await handleCommand(update.message);
+      // Handle demo mode toggle
+      if (data === 'toggle_demo') {
+        const isDemo = await tradingService.isDemoMode();
+        await tradingService.setDemoMode(!isDemo);
+        
+        const newMode = !isDemo ? 'Demo' : 'Live';
+        await sendBilingualMessage(
+          chatId,
+          `Mode switched to ${newMode} mode.`,
+          `模式已切换为${newMode}模式。`
+        );
       }
       
-      res.status(200).json({ ok: true });
-    } catch (error) {
-      console.error('Error handling webhook:', error);
-      res.status(500).json({ error: error.message });
+      // Handle order cancellation
+      if (data.startsWith('cancel_')) {
+        const orderId = data.split('_')[1];
+        const result = await tradingService.cancelOrder(orderId);
+        
+        await sendBilingualMessage(
+          chatId,
+          `Order cancelled: ${result.type} ${result.quantity} shares of ${result.symbol} at $${result.limitPrice.toFixed(2)}`,
+          `订单已取消: ${result.type} ${result.quantity} 股 ${result.symbol}，价格 $${result.limitPrice.toFixed(2)}`
+        );
+      }
+      
+      return res.sendStatus(200);
     }
-  } else {
-    res.status(405).json({ error: 'Method not allowed' });
+    
+    // Handle text messages
+    if (update.message && update.message.text) {
+      const chatId = update.message.chat.id;
+      const text = update.message.text;
+      
+      // Handle commands
+      if (text.startsWith('/')) {
+        const [command, ...args] = text.split(' ');
+        
+        switch (command) {
+          case '/start':
+            const welcomeEnMessage = 'Welcome to the Trading Bot! Use /help to see available commands.';
+            const welcomeZhMessage = '欢迎使用交易机器人！使用 /help 查看可用命令。';
+            await sendBilingualMessage(chatId, welcomeEnMessage, welcomeZhMessage);
+            break;
+            
+          case '/help':
+            const helpEnMessage = `
+Available commands:
+/balance - Check your balance
+/positions - View your positions
+/pnl - Calculate your P&L
+/demo - Toggle demo mode
+/mode - Check current mode
+/market - Check if market is open
+/buy SYMBOL QUANTITY [PRICE] - Place a buy order
+/sell SYMBOL QUANTITY [PRICE] - Place a sell order
+/orders - View pending orders
+/cancel ORDER_ID - Cancel an order
+            `;
+            const helpZhMessage = `
+可用命令:
+/balance - 查看余额
+/positions - 查看持仓
+/pnl - 计算盈亏
+/demo - 切换演示模式
+/mode - 检查当前模式
+/market - 检查市场是否开放
+/buy 股票代码 数量 [价格] - 下买单
+/sell 股票代码 数量 [价格] - 下卖单
+/orders - 查看待处理订单
+/cancel 订单ID - 取消订单
+            `;
+            await sendBilingualMessage(chatId, helpEnMessage, helpZhMessage);
+            break;
+            
+          case '/balance':
+            const balance = await tradingService.getBalance();
+            const isDemo = await tradingService.isDemoMode();
+            const mode = isDemo ? 'Demo' : 'Live';
+            await sendBilingualMessage(
+              chatId,
+              `${mode} Balance: $${balance.toFixed(2)}`,
+              `${mode} 余额: $${balance.toFixed(2)}`
+            );
+            break;
+            
+          case '/positions':
+            const positions = await tradingService.getPositions();
+            if (positions.length === 0) {
+              await sendBilingualMessage(
+                chatId,
+                'You have no open positions.',
+                '您没有持仓。'
+              );
+            } else {
+              let positionsEnMessage = 'Your positions:\n';
+              let positionsZhMessage = '您的持仓:\n';
+              
+              for (const position of positions) {
+                const currentPrice = await tradingService.getCurrentPrice(position.symbol);
+                const pnl = (currentPrice - position.avg_price) * position.quantity;
+                const pnlPercent = ((currentPrice - position.avg_price) / position.avg_price) * 100;
+                
+                positionsEnMessage += `${position.symbol}: ${position.quantity} shares @ $${position.avg_price.toFixed(2)} (Current: $${currentPrice.toFixed(2)}, P&L: $${pnl.toFixed(2)}, ${pnlPercent.toFixed(2)}%)\n`;
+                positionsZhMessage += `${position.symbol}: ${position.quantity} 股 @ $${position.avg_price.toFixed(2)} (当前: $${currentPrice.toFixed(2)}, 盈亏: $${pnl.toFixed(2)}, ${pnlPercent.toFixed(2)}%)\n`;
+              }
+              
+              await sendBilingualMessage(chatId, positionsEnMessage, positionsZhMessage);
+            }
+            break;
+            
+          case '/pnl':
+            const pnl = await tradingService.getPnL();
+            await sendBilingualMessage(
+              chatId,
+              `Total P&L: $${pnl.toFixed(2)}`,
+              `总盈亏: $${pnl.toFixed(2)}`
+            );
+            break;
+            
+          case '/demo':
+            const currentDemoMode = await tradingService.isDemoMode();
+            await tradingService.setDemoMode(!currentDemoMode);
+            const newMode = !currentDemoMode ? 'Demo' : 'Live';
+            await sendBilingualMessage(
+              chatId,
+              `Mode switched to ${newMode} mode.`,
+              `模式已切换为${newMode}模式。`
+            );
+            break;
+            
+          case '/mode':
+            const currentMode = await tradingService.isDemoMode();
+            const modeText = currentMode ? 'Demo' : 'Live';
+            await sendBilingualMessage(
+              chatId,
+              `Current mode: ${modeText}`,
+              `当前模式: ${modeText}`
+            );
+            break;
+            
+          case '/market':
+            const isOpen = tradingService.isMarketOpen();
+            const marketStatus = isOpen ? 'open' : 'closed';
+            await sendBilingualMessage(
+              chatId,
+              `Market is currently ${marketStatus}.`,
+              `市场当前${isOpen ? '开放' : '关闭'}。`
+            );
+            break;
+            
+          case '/buy':
+            if (args.length < 2) {
+              await sendBilingualMessage(
+                chatId,
+                'Please specify a symbol and quantity. Example: /buy AAPL 10',
+                '请指定股票代码和数量。例如: /buy AAPL 10'
+              );
+              break;
+            }
+            
+            const buySymbol = args[0].toUpperCase();
+            const buyQuantity = parseInt(args[1]);
+            const buyLimitPrice = args[2] ? parseFloat(args[2]) : null;
+            
+            if (isNaN(buyQuantity) || buyQuantity <= 0) {
+              await sendBilingualMessage(
+                chatId,
+                'Please enter a valid quantity.',
+                '请输入有效数量。'
+              );
+              break;
+            }
+            
+            try {
+              const buyOrderType = buyLimitPrice ? 'LIMIT' : 'MARKET';
+              const buyResult = await tradingService.placeBuyOrder(buySymbol, buyQuantity, buyOrderType, buyLimitPrice);
+              
+              if (buyOrderType === 'MARKET') {
+                await sendBilingualMessage(
+                  chatId,
+                  `Market buy order executed: ${buyQuantity} shares of ${buySymbol} at $${buyResult.price.toFixed(2)}`,
+                  `市价买单已执行: ${buyQuantity} 股 ${buySymbol}，价格 $${buyResult.price.toFixed(2)}`
+                );
+              } else {
+                await sendBilingualMessage(
+                  chatId,
+                  buyResult.message,
+                  buyResult.message.replace('Limit buy order placed for', '限价买单已下:').replace('shares of', '股').replace('at', '价格')
+                );
+              }
+            } catch (error) {
+              await sendBilingualMessage(
+                chatId,
+                `Error: ${error.message}`,
+                `错误: ${error.message}`
+              );
+            }
+            break;
+            
+          case '/sell':
+            if (args.length < 2) {
+              await sendBilingualMessage(
+                chatId,
+                'Please specify a symbol and quantity. Example: /sell AAPL 10',
+                '请指定股票代码和数量。例如: /sell AAPL 10'
+              );
+              break;
+            }
+            
+            const sellSymbol = args[0].toUpperCase();
+            const sellQuantity = parseInt(args[1]);
+            const sellLimitPrice = args[2] ? parseFloat(args[2]) : null;
+            
+            if (isNaN(sellQuantity) || sellQuantity <= 0) {
+              await sendBilingualMessage(
+                chatId,
+                'Please enter a valid quantity.',
+                '请输入有效数量。'
+              );
+              break;
+            }
+            
+            try {
+              const sellOrderType = sellLimitPrice ? 'LIMIT' : 'MARKET';
+              const sellResult = await tradingService.placeSellOrder(sellSymbol, sellQuantity, sellOrderType, sellLimitPrice);
+              
+              if (sellOrderType === 'MARKET') {
+                await sendBilingualMessage(
+                  chatId,
+                  `Market sell order executed: ${sellQuantity} shares of ${sellSymbol} at $${sellResult.price.toFixed(2)}`,
+                  `市价卖单已执行: ${sellQuantity} 股 ${sellSymbol}，价格 $${sellResult.price.toFixed(2)}`
+                );
+              } else {
+                await sendBilingualMessage(
+                  chatId,
+                  sellResult.message,
+                  sellResult.message.replace('Limit sell order placed for', '限价卖单已下:').replace('shares of', '股').replace('at', '价格')
+                );
+              }
+            } catch (error) {
+              await sendBilingualMessage(
+                chatId,
+                `Error: ${error.message}`,
+                `错误: ${error.message}`
+              );
+            }
+            break;
+            
+          case '/orders':
+            const orders = await tradingService.getPendingOrders();
+            if (orders.length === 0) {
+              await sendBilingualMessage(
+                chatId,
+                'You have no pending orders.',
+                '您没有待处理订单。'
+              );
+            } else {
+              let ordersEnMessage = 'Your pending orders:\n';
+              let ordersZhMessage = '您的待处理订单:\n';
+              
+              for (const order of orders) {
+                const orderType = order.type === 'BUY' ? 'Buy' : 'Sell';
+                const orderTypeZh = order.type === 'BUY' ? '买入' : '卖出';
+                
+                ordersEnMessage += `ID: ${order.id} - ${orderType} ${order.quantity} shares of ${order.symbol} at $${order.limit_price.toFixed(2)}\n`;
+                ordersZhMessage += `ID: ${order.id} - ${orderTypeZh} ${order.quantity} 股 ${order.symbol}，价格 $${order.limit_price.toFixed(2)}\n`;
+              }
+              
+              await sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
+            }
+            break;
+            
+          case '/cancel':
+            if (args.length < 1) {
+              await sendBilingualMessage(
+                chatId,
+                'Please specify an order ID. Example: /cancel 123',
+                '请指定订单ID。例如: /cancel 123'
+              );
+              break;
+            }
+            
+            const orderId = parseInt(args[0]);
+            
+            if (isNaN(orderId)) {
+              await sendBilingualMessage(
+                chatId,
+                'Please enter a valid order ID.',
+                '请输入有效订单ID。'
+              );
+              break;
+            }
+            
+            try {
+              const cancelResult = await tradingService.cancelOrder(orderId);
+              await sendBilingualMessage(
+                chatId,
+                `Order cancelled: ${cancelResult.type} ${cancelResult.quantity} shares of ${cancelResult.symbol} at $${cancelResult.limitPrice.toFixed(2)}`,
+                `订单已取消: ${cancelResult.type === 'BUY' ? '买入' : '卖出'} ${cancelResult.quantity} 股 ${cancelResult.symbol}，价格 $${cancelResult.limitPrice.toFixed(2)}`
+              );
+            } catch (error) {
+              await sendBilingualMessage(
+                chatId,
+                `Error: ${error.message}`,
+                `错误: ${error.message}`
+              );
+            }
+            break;
+            
+          default:
+            await sendBilingualMessage(
+              chatId,
+              'Unknown command. Use /help to see available commands.',
+              '未知命令。使用 /help 查看可用命令。'
+            );
+        }
+      }
+    }
+    
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Error handling webhook:', error);
+    res.sendStatus(500);
   }
-}; 
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+}); 
