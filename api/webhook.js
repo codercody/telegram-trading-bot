@@ -30,6 +30,14 @@ async function sendBilingualMessage(chatId, enMessage, zhMessage) {
   }
 }
 
+// Helper function to send error messages
+async function sendErrorMessage(chatId, error) {
+  const errorMessage = error.message || 'An unknown error occurred';
+  const errorEnMessage = `Error: ${errorMessage}`;
+  const errorZhMessage = `错误：${errorMessage}`;
+  await sendBilingualMessage(chatId, errorEnMessage, errorZhMessage);
+}
+
 // Handle incoming webhook requests
 export default async function handler(req, res) {
   // Only allow POST requests
@@ -88,49 +96,61 @@ export default async function handler(req, res) {
           break;
           
         case '/balance':
-          const balance = await tradingService.getBalance();
-          const balanceEnMessage = `Your current balance: $${balance.toFixed(2)}`;
-          const balanceZhMessage = `当前余额：$${balance.toFixed(2)}`;
-          await sendBilingualMessage(chatId, balanceEnMessage, balanceZhMessage);
+          try {
+            const balance = await tradingService.getBalance();
+            const balanceEnMessage = `Your current balance: $${balance.toFixed(2)}`;
+            const balanceZhMessage = `当前余额：$${balance.toFixed(2)}`;
+            await sendBilingualMessage(chatId, balanceEnMessage, balanceZhMessage);
+          } catch (error) {
+            await sendErrorMessage(chatId, error);
+          }
           break;
           
         case '/positions':
-          const positions = await tradingService.getPositions();
-          if (positions.length === 0) {
-            const noPositionsEnMessage = 'You have no open positions.';
-            const noPositionsZhMessage = '您当前没有持仓。';
-            await sendBilingualMessage(chatId, noPositionsEnMessage, noPositionsZhMessage);
-          } else {
-            let positionsEnMessage = 'Your current positions:\n';
-            let positionsZhMessage = '当前持仓：\n';
-            
-            for (const position of positions) {
-              const currentPrice = await tradingService.getCurrentPrice(position.symbol);
+          try {
+            const positions = await tradingService.getPositions();
+            if (positions.length === 0) {
+              const noPositionsEnMessage = 'You have no open positions.';
+              const noPositionsZhMessage = '您当前没有持仓。';
+              await sendBilingualMessage(chatId, noPositionsEnMessage, noPositionsZhMessage);
+            } else {
+              let positionsEnMessage = 'Your current positions:\n';
+              let positionsZhMessage = '当前持仓：\n';
               
-              positionsEnMessage += `${escapeHtml(position.symbol)}: ${position.quantity} shares @ $${position.avg_price.toFixed(2)} (Current: $${currentPrice.toFixed(2)})\n`;
-              positionsZhMessage += `${escapeHtml(position.symbol)}: ${position.quantity} 股 @ $${position.avg_price.toFixed(2)} (当前: $${currentPrice.toFixed(2)})\n`;
+              for (const position of positions) {
+                const currentPrice = await tradingService.getCurrentPrice(position.symbol);
+                
+                positionsEnMessage += `${escapeHtml(position.symbol)}: ${position.quantity} shares @ $${position.avg_price.toFixed(2)} (Current: $${currentPrice.toFixed(2)})\n`;
+                positionsZhMessage += `${escapeHtml(position.symbol)}: ${position.quantity} 股 @ $${position.avg_price.toFixed(2)} (当前: $${currentPrice.toFixed(2)})\n`;
+              }
+              
+              await sendBilingualMessage(chatId, positionsEnMessage, positionsZhMessage);
             }
-            
-            await sendBilingualMessage(chatId, positionsEnMessage, positionsZhMessage);
+          } catch (error) {
+            await sendErrorMessage(chatId, error);
           }
           break;
           
         case '/orders':
-          const orders = await tradingService.getPendingOrders();
-          if (orders.length === 0) {
-            const noOrdersEnMessage = 'You have no pending orders.';
-            const noOrdersZhMessage = '您没有待处理订单。';
-            await sendBilingualMessage(chatId, noOrdersEnMessage, noOrdersZhMessage);
-          } else {
-            let ordersEnMessage = 'Your pending orders:\n';
-            let ordersZhMessage = '待处理订单：\n';
-            
-            for (const order of orders) {
-              ordersEnMessage += `${escapeHtml(order.symbol)}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)}\n`;
-              ordersZhMessage += `${escapeHtml(order.symbol)}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)}\n`;
+          try {
+            const orders = await tradingService.getPendingOrders();
+            if (orders.length === 0) {
+              const noOrdersEnMessage = 'You have no pending orders.';
+              const noOrdersZhMessage = '您没有待处理订单。';
+              await sendBilingualMessage(chatId, noOrdersEnMessage, noOrdersZhMessage);
+            } else {
+              let ordersEnMessage = 'Your pending orders:\n';
+              let ordersZhMessage = '待处理订单：\n';
+              
+              for (const order of orders) {
+                ordersEnMessage += `${escapeHtml(order.symbol)}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)}\n`;
+                ordersZhMessage += `${escapeHtml(order.symbol)}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)}\n`;
+              }
+              
+              await sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
             }
-            
-            await sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
+          } catch (error) {
+            await sendErrorMessage(chatId, error);
           }
           break;
           
@@ -140,11 +160,15 @@ export default async function handler(req, res) {
             const buyUsageZhMessage = '用法：/buy <股票代码> <数量>';
             await sendBilingualMessage(chatId, buyUsageEnMessage, buyUsageZhMessage);
           } else {
-            const [buySymbol, buyQuantity] = args;
-            const buyResult = await tradingService.placeBuyOrder(buySymbol, parseInt(buyQuantity));
-            const buyEnMessage = `Buy order executed: ${buyQuantity} shares of ${escapeHtml(buySymbol)} at $${buyResult.price.toFixed(2)}`;
-            const buyZhMessage = `买单已执行：${buyQuantity} 股 ${escapeHtml(buySymbol)} @ $${buyResult.price.toFixed(2)}`;
-            await sendBilingualMessage(chatId, buyEnMessage, buyZhMessage);
+            try {
+              const [buySymbol, buyQuantity] = args;
+              const buyResult = await tradingService.placeBuyOrder(buySymbol, parseInt(buyQuantity));
+              const buyEnMessage = `Buy order executed: ${buyQuantity} shares of ${escapeHtml(buySymbol)} at $${buyResult.price.toFixed(2)}`;
+              const buyZhMessage = `买单已执行：${buyQuantity} 股 ${escapeHtml(buySymbol)} @ $${buyResult.price.toFixed(2)}`;
+              await sendBilingualMessage(chatId, buyEnMessage, buyZhMessage);
+            } catch (error) {
+              await sendErrorMessage(chatId, error);
+            }
           }
           break;
           
@@ -154,11 +178,15 @@ export default async function handler(req, res) {
             const sellUsageZhMessage = '用法：/sell <股票代码> <数量>';
             await sendBilingualMessage(chatId, sellUsageEnMessage, sellUsageZhMessage);
           } else {
-            const [sellSymbol, sellQuantity] = args;
-            const sellResult = await tradingService.placeSellOrder(sellSymbol, parseInt(sellQuantity));
-            const sellEnMessage = `Sell order executed: ${sellQuantity} shares of ${escapeHtml(sellSymbol)} at $${sellResult.price.toFixed(2)}`;
-            const sellZhMessage = `卖单已执行：${sellQuantity} 股 ${escapeHtml(sellSymbol)} @ $${sellResult.price.toFixed(2)}`;
-            await sendBilingualMessage(chatId, sellEnMessage, sellZhMessage);
+            try {
+              const [sellSymbol, sellQuantity] = args;
+              const sellResult = await tradingService.placeSellOrder(sellSymbol, parseInt(sellQuantity));
+              const sellEnMessage = `Sell order executed: ${sellQuantity} shares of ${escapeHtml(sellSymbol)} at $${sellResult.price.toFixed(2)}`;
+              const sellZhMessage = `卖单已执行：${sellQuantity} 股 ${escapeHtml(sellSymbol)} @ $${sellResult.price.toFixed(2)}`;
+              await sendBilingualMessage(chatId, sellEnMessage, sellZhMessage);
+            } catch (error) {
+              await sendErrorMessage(chatId, error);
+            }
           }
           break;
           
@@ -168,33 +196,49 @@ export default async function handler(req, res) {
             const cancelUsageZhMessage = '用法：/cancel <订单ID>';
             await sendBilingualMessage(chatId, cancelUsageEnMessage, cancelUsageZhMessage);
           } else {
-            const orderId = args[0];
-            await tradingService.cancelOrder(orderId);
-            const cancelEnMessage = `Order ${escapeHtml(orderId)} cancelled successfully`;
-            const cancelZhMessage = `订单 ${escapeHtml(orderId)} 已成功取消`;
-            await sendBilingualMessage(chatId, cancelEnMessage, cancelZhMessage);
+            try {
+              const orderId = args[0];
+              await tradingService.cancelOrder(orderId);
+              const cancelEnMessage = `Order ${escapeHtml(orderId)} cancelled successfully`;
+              const cancelZhMessage = `订单 ${escapeHtml(orderId)} 已成功取消`;
+              await sendBilingualMessage(chatId, cancelEnMessage, cancelZhMessage);
+            } catch (error) {
+              await sendErrorMessage(chatId, error);
+            }
           }
           break;
           
         case '/demo':
-          await tradingService.setDemoMode(true);
-          const demoEnMessage = 'Switched to demo mode';
-          const demoZhMessage = '已切换到模拟模式';
-          await sendBilingualMessage(chatId, demoEnMessage, demoZhMessage);
+          try {
+            await tradingService.setDemoMode(true);
+            const demoEnMessage = 'Switched to demo mode';
+            const demoZhMessage = '已切换到模拟模式';
+            await sendBilingualMessage(chatId, demoEnMessage, demoZhMessage);
+          } catch (error) {
+            await sendErrorMessage(chatId, error);
+          }
           break;
           
         case '/live':
-          await tradingService.setDemoMode(false);
-          const liveEnMessage = 'Switched to live mode';
-          const liveZhMessage = '已切换到实盘模式';
-          await sendBilingualMessage(chatId, liveEnMessage, liveZhMessage);
+          try {
+            await tradingService.setDemoMode(false);
+            const liveEnMessage = 'Switched to live mode';
+            const liveZhMessage = '已切换到实盘模式';
+            await sendBilingualMessage(chatId, liveEnMessage, liveZhMessage);
+          } catch (error) {
+            await sendErrorMessage(chatId, error);
+          }
           break;
           
         case '/mode':
-          const isDemo = await tradingService.isDemoMode();
-          const modeEnMessage = `Current mode: ${isDemo ? 'Demo' : 'Live'}`;
-          const modeZhMessage = `当前模式：${isDemo ? '模拟' : '实盘'}`;
-          await sendBilingualMessage(chatId, modeEnMessage, modeZhMessage);
+          try {
+            const isDemo = await tradingService.isDemoMode();
+            const modeEnMessage = `Current mode: ${isDemo ? 'Demo' : 'Live'}`;
+            const modeZhMessage = `当前模式：${isDemo ? '模拟' : '实盘'}`;
+            await sendBilingualMessage(chatId, modeEnMessage, modeZhMessage);
+          } catch (error) {
+            await sendErrorMessage(chatId, error);
+          }
           break;
           
         default:
