@@ -1,66 +1,50 @@
 -- Create users table
 CREATE TABLE users (
     user_id BIGINT PRIMARY KEY,
-    demo_balance DECIMAL(15,2) NOT NULL DEFAULT 100000.00,
-    live_balance DECIMAL(15,2) NOT NULL DEFAULT 100000.00,
+    demo_balance DECIMAL(10,2) NOT NULL DEFAULT 100000.00,
+    live_balance DECIMAL(10,2) NOT NULL DEFAULT 30470.00,
     demo_mode BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create positions table
 CREATE TABLE positions (
     id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(user_id),
     symbol VARCHAR(10) NOT NULL,
     quantity INTEGER NOT NULL,
-    avg_price DECIMAL(15,2) NOT NULL,
-    demo_mode BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    UNIQUE(user_id, symbol, demo_mode)
+    avg_price DECIMAL(10,2) NOT NULL,
+    demo_mode BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol, demo_mode)
 );
 
 -- Create pending_orders table
 CREATE TABLE pending_orders (
     id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(user_id),
     symbol VARCHAR(10) NOT NULL,
     quantity INTEGER NOT NULL,
-    limit_price DECIMAL(15,2) NOT NULL,
+    limit_price DECIMAL(10,2) NOT NULL,
     type VARCHAR(4) NOT NULL CHECK (type IN ('BUY', 'SELL')),
-    demo_mode BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+    demo_mode BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create order_history table
-CREATE TABLE order_history (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(user_id),
-    symbol VARCHAR(10) NOT NULL,
-    quantity INTEGER NOT NULL,
-    price DECIMAL(15,2) NOT NULL,
-    type VARCHAR(4) NOT NULL CHECK (type IN ('BUY', 'SELL')),
-    order_type VARCHAR(10) NOT NULL CHECK (order_type IN ('MARKET', 'LIMIT')),
-    demo_mode BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
+-- Add indexes for better query performance
+CREATE INDEX idx_positions_demo_mode ON positions(demo_mode);
+CREATE INDEX idx_pending_orders_demo_mode ON pending_orders(demo_mode);
 
--- Create indexes for better query performance
-CREATE INDEX idx_positions_user_id ON positions(user_id);
-CREATE INDEX idx_pending_orders_user_id ON pending_orders(user_id);
-CREATE INDEX idx_order_history_user_id ON order_history(user_id);
-
--- Create function to update updated_at timestamp
+-- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = TIMEZONE('utc'::text, NOW());
+    NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
 $$ language 'plpgsql';
 
--- Create triggers for updating updated_at
+-- Create triggers for updating timestamps
 CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW
@@ -71,8 +55,7 @@ CREATE TRIGGER update_positions_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Disable Row Level Security (RLS) as requested
+-- Disable RLS for these tables
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE positions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE pending_orders DISABLE ROW LEVEL SECURITY;
-ALTER TABLE order_history DISABLE ROW LEVEL SECURITY; 
+ALTER TABLE pending_orders DISABLE ROW LEVEL SECURITY; 

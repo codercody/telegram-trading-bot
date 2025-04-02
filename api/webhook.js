@@ -41,7 +41,12 @@ async function deleteMessage(chatId, messageId) {
 }
 
 // Handle incoming webhook requests
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
     const update = req.body;
     
@@ -248,4 +253,4 @@ module.exports = async (req, res) => {
     console.error('Error handling webhook:', error);
     res.status(500).json({ error: error.message });
   }
-}; 
+} 

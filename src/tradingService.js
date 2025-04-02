@@ -6,7 +6,7 @@ class TradingService {
     // Initialize Supabase client
     this.supabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
+      process.env.SUPABASE_ANON_KEY
     );
   }
 
@@ -169,22 +169,6 @@ class TradingService {
         if (insertError) throw insertError;
       }
 
-      // Record order history
-      const { error: historyError } = await this.supabase
-        .from('order_history')
-        .insert([
-          {
-            symbol,
-            quantity,
-            price: currentPrice,
-            type: 'buy',
-            order_type: 'market',
-            demo_mode: isDemoMode
-          }
-        ]);
-
-      if (historyError) throw historyError;
-
       return {
         symbol,
         quantity,
@@ -244,22 +228,6 @@ class TradingService {
 
         if (updateError) throw updateError;
       }
-
-      // Record order history
-      const { error: historyError } = await this.supabase
-        .from('order_history')
-        .insert([
-          {
-            symbol,
-            quantity,
-            price: currentPrice,
-            type: 'sell',
-            order_type: 'market',
-            demo_mode: isDemoMode
-          }
-        ]);
-
-      if (historyError) throw historyError;
 
       return {
         symbol,
