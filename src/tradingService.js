@@ -133,14 +133,11 @@ class TradingService {
           interval: '1d'
         });
 
-        console.log(`${new Date(order.created_at).toTimeString()} ${new Date().toTimeString()} ${history.length}`)
-
         if (history.length === 0) continue;
 
         // Find min/max price in the period
-        const prices = history.map(h => h.close);
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
+        const minPrice = Math.min(...history.map(h => h.low));
+        const maxPrice = Math.max(...history.map(h => h.high));
 
         // Check if order can be executed
         if (order.type === 'buy' && minPrice <= order.limit_price) {
