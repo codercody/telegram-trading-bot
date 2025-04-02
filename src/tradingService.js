@@ -114,6 +114,131 @@ class TradingService {
     }
   }
 
+  async checkAndExecutePendingOrders() {
+    try {
+      const { data: pendingOrders, error: fetchError } = await this.supabase
+        .from('pending_orders')
+        .select('*');
+
+      if (fetchError) throw fetchError;
+
+      for (const order of pendingOrders) {
+        const isDemoMode = await this.isDemoMode();
+        if (order.demo_mode !== isDemoMode) continue;
+
+        // Get price history since order was placed
+        const history = await yahooFinance.historical(order.symbol, {
+          period1: new Date(order.created_at),
+          period2: new Date(),
+          interval: '1m'
+        });
+
+        if (history.length === 0) continue;
+
+        // Find min/max price in the period
+        const prices = history.map(h => h.close);
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+
+        // Check if order can be executed
+        if (order.type === 'buy' && minPrice <= order.limit_price) {
+          // Execute buy order at limit price
+          await this.executeBuyOrder(order.symbol, order.quantity, order.limit_price);
+          await this.cancelOrder(order.id);
+        } else if (order.type === 'sell' && maxPrice >= order.limit_price) {
+          // Execute sell order at limit price
+          await this.executeSellOrder(order.symbol, order.quantity, order.limit_price);
+          await this.cancelOrder(order.id);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking pending orders:', error);
+      throw error;
+    }
+  }
+
+  async executeBuyOrder(symbol, quantity, price) {
+    const totalCost = quantity * price;
+    await this.updateBalance(-totalCost);
+
+    const { data: existingPosition, error: fetchError } = await this.supabase
+      .from('positions')
+      .select('*')
+      .eq('symbol', symbol)
+      .eq('demo_mode', await this.isDemoMode())
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      throw fetchError;
+    }
+
+    if (existingPosition) {
+      const newQuantity = existingPosition.quantity + quantity;
+      const newAvgPrice = (existingPosition.avg_price * existingPosition.quantity + price * quantity) / newQuantity;
+
+      const { error: updateError } = await this.supabase
+        .from('positions')
+        .update({
+          quantity: newQuantity,
+          avg_price: newAvgPrice
+        })
+        .eq('symbol', symbol)
+        .eq('demo_mode', await this.isDemoMode());
+
+      if (updateError) throw updateError;
+    } else {
+      const { error: insertError } = await this.supabase
+        .from('positions')
+        .insert([
+          {
+            symbol,
+            quantity,
+            avg_price: price,
+            demo_mode: await this.isDemoMode()
+          }
+        ]);
+
+      if (insertError) throw insertError;
+    }
+  }
+
+  async executeSellOrder(symbol, quantity, price) {
+    const totalProceeds = quantity * price;
+
+    const { data: position, error: fetchError } = await this.supabase
+      .from('positions')
+      .select('*')
+      .eq('symbol', symbol)
+      .eq('demo_mode', await this.isDemoMode())
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!position || position.quantity < quantity) {
+      throw new Error('Insufficient shares');
+    }
+
+    await this.updateBalance(totalProceeds);
+
+    const newQuantity = position.quantity - quantity;
+    if (newQuantity === 0) {
+      const { error: deleteError } = await this.supabase
+        .from('positions')
+        .delete()
+        .eq('symbol', symbol)
+        .eq('demo_mode', await this.isDemoMode());
+
+      if (deleteError) throw deleteError;
+    } else {
+      const { error: updateError } = await this.supabase
+        .from('positions')
+        .update({ quantity: newQuantity })
+        .eq('symbol', symbol)
+        .eq('demo_mode', await this.isDemoMode());
+
+      if (updateError) throw updateError;
+    }
+  }
+
   async placeBuyOrder(symbol, quantity, limitPrice) {
     try {
       const isDemoMode = await this.isDemoMode();
@@ -124,57 +249,39 @@ class TradingService {
       }
 
       const currentPrice = await this.getCurrentPrice(symbol);
-      const totalCost = quantity * currentPrice;
-
-      // Update balance
-      await this.updateBalance(-totalCost);
-
-      // Update or insert position
-      const { data: existingPosition, error: fetchError } = await this.supabase
-        .from('positions')
-        .select('*')
-        .eq('symbol', symbol)
-        .eq('demo_mode', isDemoMode)
-        .single();
-
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        throw fetchError;
+      
+      // If limit price is better than current price, execute immediately
+      if (limitPrice >= currentPrice) {
+        await this.executeBuyOrder(symbol, quantity, currentPrice);
+        return {
+          symbol,
+          quantity,
+          price: currentPrice,
+          totalCost: quantity * currentPrice,
+          executed: true
+        };
       }
 
-      if (existingPosition) {
-        const newQuantity = existingPosition.quantity + quantity;
-        const newAvgPrice = (existingPosition.avg_price * existingPosition.quantity + currentPrice * quantity) / newQuantity;
+      // Otherwise, place as pending order
+      const { error: insertError } = await this.supabase
+        .from('pending_orders')
+        .insert([
+          {
+            symbol,
+            quantity,
+            limit_price: limitPrice,
+            type: 'buy',
+            demo_mode: isDemoMode
+          }
+        ]);
 
-        const { error: updateError } = await this.supabase
-          .from('positions')
-          .update({
-            quantity: newQuantity,
-            avg_price: newAvgPrice
-          })
-          .eq('symbol', symbol)
-          .eq('demo_mode', isDemoMode);
-
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await this.supabase
-          .from('positions')
-          .insert([
-            {
-              symbol,
-              quantity,
-              avg_price: currentPrice,
-              demo_mode: isDemoMode
-            }
-          ]);
-
-        if (insertError) throw insertError;
-      }
+      if (insertError) throw insertError;
 
       return {
         symbol,
         quantity,
-        price: currentPrice,
-        totalCost
+        limitPrice,
+        executed: false
       };
     } catch (error) {
       console.error('Error placing buy order:', error);
@@ -192,49 +299,39 @@ class TradingService {
       }
 
       const currentPrice = await this.getCurrentPrice(symbol);
-      const totalProceeds = quantity * currentPrice;
-
-      // Check if account has enough shares
-      const { data: position, error: fetchError } = await this.supabase
-        .from('positions')
-        .select('*')
-        .eq('symbol', symbol)
-        .eq('demo_mode', isDemoMode)
-        .single();
-
-      if (fetchError) throw fetchError;
-      if (!position || position.quantity < quantity) {
-        throw new Error('Insufficient shares');
+      
+      // If limit price is better than current price, execute immediately
+      if (limitPrice <= currentPrice) {
+        await this.executeSellOrder(symbol, quantity, currentPrice);
+        return {
+          symbol,
+          quantity,
+          price: currentPrice,
+          totalProceeds: quantity * currentPrice,
+          executed: true
+        };
       }
 
-      // Update balance
-      await this.updateBalance(totalProceeds);
+      // Otherwise, place as pending order
+      const { error: insertError } = await this.supabase
+        .from('pending_orders')
+        .insert([
+          {
+            symbol,
+            quantity,
+            limit_price: limitPrice,
+            type: 'sell',
+            demo_mode: isDemoMode
+          }
+        ]);
 
-      // Update position
-      const newQuantity = position.quantity - quantity;
-      if (newQuantity === 0) {
-        const { error: deleteError } = await this.supabase
-          .from('positions')
-          .delete()
-          .eq('symbol', symbol)
-          .eq('demo_mode', isDemoMode);
-
-        if (deleteError) throw deleteError;
-      } else {
-        const { error: updateError } = await this.supabase
-          .from('positions')
-          .update({ quantity: newQuantity })
-          .eq('symbol', symbol)
-          .eq('demo_mode', isDemoMode);
-
-        if (updateError) throw updateError;
-      }
+      if (insertError) throw insertError;
 
       return {
         symbol,
         quantity,
-        price: currentPrice,
-        totalProceeds
+        limitPrice,
+        executed: false
       };
     } catch (error) {
       console.error('Error placing sell order:', error);

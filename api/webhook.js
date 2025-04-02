@@ -56,6 +56,14 @@ export default async function handler(req, res) {
     const chatId = update.message.chat.id;
     const text = update.message.text;
     
+    // Check and execute pending orders before processing new command
+    try {
+      await tradingService.checkAndExecutePendingOrders();
+    } catch (error) {
+      console.error('Error checking pending orders:', error);
+      // Don't throw here, continue with command processing
+    }
+    
     // Handle commands
     if (text.startsWith('/')) {
       const [command, ...args] = text.split(' ');
@@ -73,8 +81,8 @@ export default async function handler(req, res) {
 /balance - Check your account balance
 /positions - View your current positions
 /orders - View your pending orders
-/buy <symbol> <quantity> - Place a buy order
-/sell <symbol> <quantity> - Place a sell order
+/buy <symbol> <quantity> [limit_price] - Place a buy order (market or limit)
+/sell <symbol> <quantity> [limit_price] - Place a sell order (market or limit)
 /cancel <orderId> - Cancel a pending order
 /demo - Switch to demo mode
 /live - Switch to live mode
@@ -85,8 +93,8 @@ export default async function handler(req, res) {
 /balance - 查看账户余额
 /positions - 查看当前持仓
 /orders - 查看待处理订单
-/buy <股票代码> <数量> - 下买单
-/sell <股票代码> <数量> - 下卖单
+/buy <股票代码> <数量> [限价] - 下买单（市价或限价）
+/sell <股票代码> <数量> [限价] - 下卖单（市价或限价）
 /cancel <订单ID> - 取消待处理订单
 /demo - 切换到模拟模式
 /live - 切换到实盘模式
@@ -143,8 +151,8 @@ export default async function handler(req, res) {
               let ordersZhMessage = '待处理订单：\n';
               
               for (const order of orders) {
-                ordersEnMessage += `${escapeHtml(order.symbol)}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)}\n`;
-                ordersZhMessage += `${escapeHtml(order.symbol)}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)}\n`;
+                ordersEnMessage += `${escapeHtml(order.symbol)}: ${order.quantity} shares @ $${order.limit_price.toFixed(2)} (${order.type})\n`;
+                ordersZhMessage += `${escapeHtml(order.symbol)}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)} (${order.type === 'buy' ? '买入' : '卖出'})\n`;
               }
               
               await sendBilingualMessage(chatId, ordersEnMessage, ordersZhMessage);
@@ -155,17 +163,24 @@ export default async function handler(req, res) {
           break;
           
         case '/buy':
-          if (args.length !== 2) {
-            const buyUsageEnMessage = 'Usage: /buy <symbol> <quantity>';
-            const buyUsageZhMessage = '用法：/buy <股票代码> <数量>';
+          if (args.length < 2 || args.length > 3) {
+            const buyUsageEnMessage = 'Usage: /buy <symbol> <quantity> [limit_price]';
+            const buyUsageZhMessage = '用法：/buy <股票代码> <数量> [限价]';
             await sendBilingualMessage(chatId, buyUsageEnMessage, buyUsageZhMessage);
           } else {
             try {
-              const [buySymbol, buyQuantity] = args;
-              const buyResult = await tradingService.placeBuyOrder(buySymbol, parseInt(buyQuantity));
-              const buyEnMessage = `Buy order executed: ${buyQuantity} shares of ${escapeHtml(buySymbol)} at $${buyResult.price.toFixed(2)}`;
-              const buyZhMessage = `买单已执行：${buyQuantity} 股 ${escapeHtml(buySymbol)} @ $${buyResult.price.toFixed(2)}`;
-              await sendBilingualMessage(chatId, buyEnMessage, buyZhMessage);
+              const [buySymbol, buyQuantity, limitPrice] = args;
+              const buyResult = await tradingService.placeBuyOrder(buySymbol, parseInt(buyQuantity), limitPrice ? parseFloat(limitPrice) : null);
+              
+              if (buyResult.executed) {
+                const buyEnMessage = `Buy order executed: ${buyQuantity} shares of ${escapeHtml(buySymbol)} at $${buyResult.price.toFixed(2)}`;
+                const buyZhMessage = `买单已执行：${buyQuantity} 股 ${escapeHtml(buySymbol)} @ $${buyResult.price.toFixed(2)}`;
+                await sendBilingualMessage(chatId, buyEnMessage, buyZhMessage);
+              } else {
+                const buyEnMessage = `Limit buy order placed: ${buyQuantity} shares of ${escapeHtml(buySymbol)} at $${buyResult.limitPrice.toFixed(2)}`;
+                const buyZhMessage = `限价买单已下单：${buyQuantity} 股 ${escapeHtml(buySymbol)} @ $${buyResult.limitPrice.toFixed(2)}`;
+                await sendBilingualMessage(chatId, buyEnMessage, buyZhMessage);
+              }
             } catch (error) {
               await sendErrorMessage(chatId, error);
             }
@@ -173,17 +188,24 @@ export default async function handler(req, res) {
           break;
           
         case '/sell':
-          if (args.length !== 2) {
-            const sellUsageEnMessage = 'Usage: /sell <symbol> <quantity>';
-            const sellUsageZhMessage = '用法：/sell <股票代码> <数量>';
+          if (args.length < 2 || args.length > 3) {
+            const sellUsageEnMessage = 'Usage: /sell <symbol> <quantity> [limit_price]';
+            const sellUsageZhMessage = '用法：/sell <股票代码> <数量> [限价]';
             await sendBilingualMessage(chatId, sellUsageEnMessage, sellUsageZhMessage);
           } else {
             try {
-              const [sellSymbol, sellQuantity] = args;
-              const sellResult = await tradingService.placeSellOrder(sellSymbol, parseInt(sellQuantity));
-              const sellEnMessage = `Sell order executed: ${sellQuantity} shares of ${escapeHtml(sellSymbol)} at $${sellResult.price.toFixed(2)}`;
-              const sellZhMessage = `卖单已执行：${sellQuantity} 股 ${escapeHtml(sellSymbol)} @ $${sellResult.price.toFixed(2)}`;
-              await sendBilingualMessage(chatId, sellEnMessage, sellZhMessage);
+              const [sellSymbol, sellQuantity, limitPrice] = args;
+              const sellResult = await tradingService.placeSellOrder(sellSymbol, parseInt(sellQuantity), limitPrice ? parseFloat(limitPrice) : null);
+              
+              if (sellResult.executed) {
+                const sellEnMessage = `Sell order executed: ${sellQuantity} shares of ${escapeHtml(sellSymbol)} at $${sellResult.price.toFixed(2)}`;
+                const sellZhMessage = `卖单已执行：${sellQuantity} 股 ${escapeHtml(sellSymbol)} @ $${sellResult.price.toFixed(2)}`;
+                await sendBilingualMessage(chatId, sellEnMessage, sellZhMessage);
+              } else {
+                const sellEnMessage = `Limit sell order placed: ${sellQuantity} shares of ${escapeHtml(sellSymbol)} at $${sellResult.limitPrice.toFixed(2)}`;
+                const sellZhMessage = `限价卖单已下单：${sellQuantity} 股 ${escapeHtml(sellSymbol)} @ $${sellResult.limitPrice.toFixed(2)}`;
+                await sendBilingualMessage(chatId, sellEnMessage, sellZhMessage);
+              }
             } catch (error) {
               await sendErrorMessage(chatId, error);
             }
