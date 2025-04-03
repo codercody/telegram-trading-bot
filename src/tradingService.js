@@ -177,10 +177,10 @@ class TradingService {
               prices: prices,
               minPrice,
               maxPrice,
-              canExecute: order.type === 'buy' ? order.limit_price >= minPrice : order.limit_price <= maxPrice
+              canExecute: order.type === 'BUY' ? order.limit_price >= minPrice : order.limit_price <= maxPrice
             });
 
-            if (order.type === 'buy' && order.limit_price >= minPrice) {
+            if (order.type === 'BUY' && order.limit_price >= minPrice) {
               // Execute buy order at the limit price
               await this.executeBuyOrder(order.symbol, order.quantity, order.limit_price);
               // Delete the pending order
@@ -188,7 +188,7 @@ class TradingService {
                 .from('pending_orders')
                 .delete()
                 .eq('id', order.id);
-            } else if (order.type === 'sell' && order.limit_price <= maxPrice) {
+            } else if (order.type === 'SELL' && order.limit_price <= maxPrice) {
               // Execute sell order at the limit price
               await this.executeSellOrder(order.symbol, order.quantity, order.limit_price);
               // Delete the pending order
