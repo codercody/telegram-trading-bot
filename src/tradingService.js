@@ -116,38 +116,76 @@ class TradingService {
 
   async checkAndExecutePendingOrders() {
     try {
-      const { data: pendingOrders, error: fetchError } = await this.supabase
+      // Get all pending orders
+      const { data: pendingOrders, error: ordersError } = await this.supabase
         .from('pending_orders')
         .select('*');
 
-      if (fetchError) throw fetchError;
+      if (ordersError) throw ordersError;
+      if (!pendingOrders || pendingOrders.length === 0) return;
 
-      for (const order of pendingOrders) {
-        const isDemoMode = await this.isDemoMode();
-        if (order.demo_mode !== isDemoMode) continue;
+      // Group orders by symbol to minimize API calls
+      const ordersBySymbol = pendingOrders.reduce((acc, order) => {
+        if (!acc[order.symbol]) {
+          acc[order.symbol] = [];
+        }
+        acc[order.symbol].push(order);
+        return acc;
+      }, {});
 
-        // Get price history since order was placed
-        const history = await yahooFinance.historical(order.symbol, {
-          period1: new Date(order.created_at),
-          period2: new Date(),
-          interval: '1d'
-        });
+      // Check each symbol's orders
+      for (const [symbol, orders] of Object.entries(ordersBySymbol)) {
+        try {
+          // Get historical price data for the symbol
+          const result = await yahooFinance.chart(symbol, {
+            interval: '1m',
+            range: '5d'
+          });
 
-        if (history.length === 0) continue;
+          if (!result || !result.quotes || result.quotes.length === 0) {
+            console.warn(`No price data available for ${symbol}`);
+            continue;
+          }
 
-        // Find min/max price in the period
-        const minPrice = Math.min(...history.map(h => h.low));
-        const maxPrice = Math.max(...history.map(h => h.high));
+          // Check each order for execution
+          for (const order of orders) {
+            // Filter quotes to only include data after order creation
+            const orderCreatedAt = new Date(order.created_at);
+            const relevantQuotes = result.quotes.filter(quote => 
+              new Date(quote.date) >= orderCreatedAt
+            );
 
-        // Check if order can be executed
-        if (order.type === 'buy' && minPrice <= order.limit_price) {
-          // Execute buy order at limit price
-          await this.executeBuyOrder(order.symbol, order.quantity, order.limit_price);
-          await this.cancelOrder(order.id);
-        } else if (order.type === 'sell' && maxPrice >= order.limit_price) {
-          // Execute sell order at limit price
-          await this.executeSellOrder(order.symbol, order.quantity, order.limit_price);
-          await this.cancelOrder(order.id);
+            if (relevantQuotes.length === 0) {
+              console.warn(`No price data available for ${symbol} after order creation`);
+              continue;
+            }
+
+            // Get min and max prices from the filtered data
+            const prices = relevantQuotes.map(quote => quote.close);
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+
+            if (order.type === 'buy' && order.limit_price >= minPrice) {
+              // Execute buy order at the limit price
+              await this.executeBuyOrder(order.symbol, order.quantity, order.limit_price);
+              // Delete the pending order
+              await this.supabase
+                .from('pending_orders')
+                .delete()
+                .eq('id', order.id);
+            } else if (order.type === 'sell' && order.limit_price <= maxPrice) {
+              // Execute sell order at the limit price
+              await this.executeSellOrder(order.symbol, order.quantity, order.limit_price);
+              // Delete the pending order
+              await this.supabase
+                .from('pending_orders')
+                .delete()
+                .eq('id', order.id);
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing orders for ${symbol}:`, error);
+          // Continue with next symbol even if one fails
         }
       }
     } catch (error) {
