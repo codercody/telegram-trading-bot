@@ -166,6 +166,20 @@ class TradingService {
             const minPrice = Math.min(...prices);
             const maxPrice = Math.max(...prices);
 
+            // Log order check information
+            console.log('Checking pending order:', {
+              orderId: order.id,
+              symbol: order.symbol,
+              type: order.type,
+              quantity: order.quantity,
+              limitPrice: order.limit_price,
+              createdAt: order.created_at,
+              prices: prices,
+              minPrice,
+              maxPrice,
+              canExecute: order.type === 'buy' ? order.limit_price >= minPrice : order.limit_price <= maxPrice
+            });
+
             if (order.type === 'buy' && order.limit_price >= minPrice) {
               // Execute buy order at the limit price
               await this.executeBuyOrder(order.symbol, order.quantity, order.limit_price);
