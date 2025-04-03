@@ -138,8 +138,9 @@ class TradingService {
         try {
           // Get historical price data for the symbol
           const result = await yahooFinance.chart(symbol, {
-            interval: '1m',
-            range: '5d'
+            period1: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+            period2: new Date(),
+            interval: '1m'
           });
 
           if (!result || !result.quotes || result.quotes.length === 0) {
