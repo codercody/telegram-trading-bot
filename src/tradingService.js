@@ -162,7 +162,7 @@ class TradingService {
             }
 
             // Get min and max prices from the filtered data
-            const prices = relevantQuotes.map(quote => quote.close);
+            const prices = relevantQuotes.map(quote => quote.close).filter(x => x > 0);
             const minPrice = Math.min(...prices);
             const maxPrice = Math.max(...prices);
 
