@@ -164,12 +164,29 @@ export default async function handler(req, res) {
           
         case '/buy':
           if (args.length < 2 || args.length > 3) {
-            const buyUsageEnMessage = 'Usage: /buy <symbol> <quantity> [limit_price]';
-            const buyUsageZhMessage = '用法：/buy <股票代码> <数量> [限价]';
+            const buyUsageEnMessage = `Usage: /buy <symbol> <quantity> [limit_price]
+Examples:
+/buy AAPL 10 - Market order to buy 10 shares of AAPL
+/buy AAPL 10 150.50 - Limit order to buy 10 shares of AAPL at $150.50`;
+            const buyUsageZhMessage = `用法：/buy <股票代码> <数量> [限价]
+示例：
+/buy AAPL 10 - 市价买入 10 股 AAPL
+/buy AAPL 10 150.50 - 限价 $150.50 买入 10 股 AAPL`;
             await sendBilingualMessage(chatId, buyUsageEnMessage, buyUsageZhMessage);
           } else {
             try {
               const [buySymbol, buyQuantity, limitPrice] = args;
+              
+              // Validate quantity is a number
+              if (isNaN(buyQuantity)) {
+                throw new Error('Quantity must be a number');
+              }
+              
+              // If limit price is provided, validate it's a number
+              if (limitPrice && isNaN(limitPrice)) {
+                throw new Error('Limit price must be a number');
+              }
+
               const buyResult = await tradingService.placeBuyOrder(buySymbol, parseInt(buyQuantity), limitPrice ? parseFloat(limitPrice) : null);
               
               if (buyResult.executed) {
@@ -189,12 +206,29 @@ export default async function handler(req, res) {
           
         case '/sell':
           if (args.length < 2 || args.length > 3) {
-            const sellUsageEnMessage = 'Usage: /sell <symbol> <quantity> [limit_price]';
-            const sellUsageZhMessage = '用法：/sell <股票代码> <数量> [限价]';
+            const sellUsageEnMessage = `Usage: /sell <symbol> <quantity> [limit_price]
+Examples:
+/sell AAPL 10 - Market order to sell 10 shares of AAPL
+/sell AAPL 10 160.75 - Limit order to sell 10 shares of AAPL at $160.75`;
+            const sellUsageZhMessage = `用法：/sell <股票代码> <数量> [限价]
+示例：
+/sell AAPL 10 - 市价卖出 10 股 AAPL
+/sell AAPL 10 160.75 - 限价 $160.75 卖出 10 股 AAPL`;
             await sendBilingualMessage(chatId, sellUsageEnMessage, sellUsageZhMessage);
           } else {
             try {
               const [sellSymbol, sellQuantity, limitPrice] = args;
+              
+              // Validate quantity is a number
+              if (isNaN(sellQuantity)) {
+                throw new Error('Quantity must be a number');
+              }
+              
+              // If limit price is provided, validate it's a number
+              if (limitPrice && isNaN(limitPrice)) {
+                throw new Error('Limit price must be a number');
+              }
+
               const sellResult = await tradingService.placeSellOrder(sellSymbol, parseInt(sellQuantity), limitPrice ? parseFloat(limitPrice) : null);
               
               if (sellResult.executed) {
