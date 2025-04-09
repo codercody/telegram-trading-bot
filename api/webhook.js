@@ -166,12 +166,12 @@ export default async function handler(req, res) {
           if (args.length < 2 || args.length > 3) {
             const buyUsageEnMessage = `Usage: /buy <symbol> <quantity> [limit_price]
 Examples:
-/buy AAPL 10 - Market order to buy 10 shares of AAPL
-/buy AAPL 10 150.50 - Limit order to buy 10 shares of AAPL at $150.50`;
+/buy AAPL 10 (Market order to buy 10 shares of AAPL)
+/buy AAPL 10 150.50 (Limit order to buy 10 shares of AAPL at $150.50)`;
             const buyUsageZhMessage = `用法：/buy <股票代码> <数量> [限价]
 示例：
-/buy AAPL 10 - 市价买入 10 股 AAPL
-/buy AAPL 10 150.50 - 限价 $150.50 买入 10 股 AAPL`;
+/buy AAPL 10 (市价买入 10 股 AAPL)
+/buy AAPL 10 150.50 (限价 $150.50 买入 10 股 AAPL)`;
             await sendBilingualMessage(chatId, buyUsageEnMessage, buyUsageZhMessage);
           } else {
             try {
@@ -205,12 +205,12 @@ Examples:
               // Also send usage message
               const buyUsageEnMessage = `Usage: /buy <symbol> <quantity> [limit_price]
 Examples:
-/buy AAPL 10 - Market order to buy 10 shares of AAPL
-/buy AAPL 10 150.50 - Limit order to buy 10 shares of AAPL at $150.50`;
+/buy AAPL 10 (Market order to buy 10 shares of AAPL)
+/buy AAPL 10 150.50 (Limit order to buy 10 shares of AAPL at $150.50)`;
               const buyUsageZhMessage = `用法：/buy <股票代码> <数量> [限价]
 示例：
-/buy AAPL 10 - 市价买入 10 股 AAPL
-/buy AAPL 10 150.50 - 限价 $150.50 买入 10 股 AAPL`;
+/buy AAPL 10 (市价买入 10 股 AAPL)
+/buy AAPL 10 150.50 (限价 $150.50 买入 10 股 AAPL)`;
               await sendBilingualMessage(chatId, buyUsageEnMessage, buyUsageZhMessage);
             }
           }
@@ -220,12 +220,12 @@ Examples:
           if (args.length < 2 || args.length > 3) {
             const sellUsageEnMessage = `Usage: /sell <symbol> <quantity> [limit_price]
 Examples:
-/sell AAPL 10 - Market order to sell 10 shares of AAPL
-/sell AAPL 10 160.75 - Limit order to sell 10 shares of AAPL at $160.75`;
+/sell AAPL 10 (Market order to sell 10 shares of AAPL)
+/sell AAPL 10 160.75 (Limit order to sell 10 shares of AAPL at $160.75)`;
             const sellUsageZhMessage = `用法：/sell <股票代码> <数量> [限价]
 示例：
-/sell AAPL 10 - 市价卖出 10 股 AAPL
-/sell AAPL 10 160.75 - 限价 $160.75 卖出 10 股 AAPL`;
+/sell AAPL 10 (市价卖出 10 股 AAPL)
+/sell AAPL 10 160.75 (限价 $160.75 卖出 10 股 AAPL)`;
             await sendBilingualMessage(chatId, sellUsageEnMessage, sellUsageZhMessage);
           } else {
             try {
@@ -259,12 +259,12 @@ Examples:
               // Also send usage message
               const sellUsageEnMessage = `Usage: /sell <symbol> <quantity> [limit_price]
 Examples:
-/sell AAPL 10 - Market order to sell 10 shares of AAPL
-/sell AAPL 10 160.75 - Limit order to sell 10 shares of AAPL at $160.75`;
+/sell AAPL 10 (Market order to sell 10 shares of AAPL)
+/sell AAPL 10 160.75 (Limit order to sell 10 shares of AAPL at $160.75)`;
               const sellUsageZhMessage = `用法：/sell <股票代码> <数量> [限价]
 示例：
-/sell AAPL 10 - 市价卖出 10 股 AAPL
-/sell AAPL 10 160.75 - 限价 $160.75 卖出 10 股 AAPL`;
+/sell AAPL 10 (市价卖出 10 股 AAPL)
+/sell AAPL 10 160.75 (限价 $160.75 卖出 10 股 AAPL)`;
               await sendBilingualMessage(chatId, sellUsageEnMessage, sellUsageZhMessage);
             }
           }
