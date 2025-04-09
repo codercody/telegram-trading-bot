@@ -216,7 +216,7 @@ class TradingService {
     const { data: existingPosition, error: fetchError } = await this.supabase
       .from('positions')
       .select('*')
-      .eq('symbol', symbol)
+      .eq('symbol', symbol.toUpperCase())
       .eq('demo_mode', await this.isDemoMode())
       .single();
 
@@ -234,7 +234,7 @@ class TradingService {
           quantity: newQuantity,
           avg_price: newAvgPrice
         })
-        .eq('symbol', symbol)
+        .eq('symbol', symbol.toUpperCase())
         .eq('demo_mode', await this.isDemoMode());
 
       if (updateError) throw updateError;
@@ -243,7 +243,7 @@ class TradingService {
         .from('positions')
         .insert([
           {
-            symbol,
+            symbol: symbol.toUpperCase(),
             quantity,
             avg_price: price,
             demo_mode: await this.isDemoMode()
@@ -260,7 +260,7 @@ class TradingService {
     const { data: position, error: fetchError } = await this.supabase
       .from('positions')
       .select('*')
-      .eq('symbol', symbol)
+      .eq('symbol', symbol.toUpperCase())
       .eq('demo_mode', await this.isDemoMode())
       .single();
 
@@ -276,7 +276,7 @@ class TradingService {
       const { error: deleteError } = await this.supabase
         .from('positions')
         .delete()
-        .eq('symbol', symbol)
+        .eq('symbol', symbol.toUpperCase())
         .eq('demo_mode', await this.isDemoMode());
 
       if (deleteError) throw deleteError;
@@ -284,7 +284,7 @@ class TradingService {
       const { error: updateError } = await this.supabase
         .from('positions')
         .update({ quantity: newQuantity })
-        .eq('symbol', symbol)
+        .eq('symbol', symbol.toUpperCase())
         .eq('demo_mode', await this.isDemoMode());
 
       if (updateError) throw updateError;
@@ -306,7 +306,7 @@ class TradingService {
       if (!limitPrice || limitPrice >= currentPrice) {
         await this.executeBuyOrder(symbol, quantity, currentPrice);
         return {
-          symbol,
+          symbol: symbol.toUpperCase(),
           quantity,
           price: currentPrice,
           totalCost: quantity * currentPrice,
@@ -319,7 +319,7 @@ class TradingService {
         .from('pending_orders')
         .insert([
           {
-            symbol,
+            symbol: symbol.toUpperCase(),
             quantity,
             limit_price: limitPrice,
             type: 'BUY',
@@ -330,7 +330,7 @@ class TradingService {
       if (insertError) throw insertError;
 
       return {
-        symbol,
+        symbol: symbol.toUpperCase(),
         quantity,
         limitPrice,
         executed: false
@@ -356,7 +356,7 @@ class TradingService {
       if (!limitPrice || limitPrice <= currentPrice) {
         await this.executeSellOrder(symbol, quantity, currentPrice);
         return {
-          symbol,
+          symbol: symbol.toUpperCase(),
           quantity,
           price: currentPrice,
           totalProceeds: quantity * currentPrice,
@@ -369,7 +369,7 @@ class TradingService {
         .from('pending_orders')
         .insert([
           {
-            symbol,
+            symbol: symbol.toUpperCase(),
             quantity,
             limit_price: limitPrice,
             type: 'SELL',
@@ -380,7 +380,7 @@ class TradingService {
       if (insertError) throw insertError;
 
       return {
-        symbol,
+        symbol: symbol.toUpperCase(),
         quantity,
         limitPrice,
         executed: false
