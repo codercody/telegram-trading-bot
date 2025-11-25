@@ -186,10 +186,12 @@ export default async function handler(req, res) {
               for (const order of orders) {
                 ordersEnMessage += `[${order.id}] ${escapeHtml(
                   order.symbol
-                )}: ${order.quantity} shares (${order.type})\n`;
+                )}: ${order.quantity} shares @ $${order.limit_price.toFixed(
+                  2
+                )} (${order.type})\n`;
                 ordersZhMessage += `[${order.id}] ${escapeHtml(
                   order.symbol
-                )}: ${order.quantity} 股 (${
+                )}: ${order.quantity} 股 @ $${order.limit_price.toFixed(2)} (${
                   order.type === "BUY" ? "买入" : "卖出"
                 })\n`;
               }
