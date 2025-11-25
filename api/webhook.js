@@ -151,10 +151,14 @@ export default async function handler(req, res) {
 
                 positionsEnMessage += `${escapeHtml(position.symbol)}: ${
                   position.quantity
-                } shares\n`;
+                } shares @ $${position.avg_price.toFixed(
+                  2
+                )} (Current: $${currentPrice.toFixed(2)})\n`;
                 positionsZhMessage += `${escapeHtml(position.symbol)}: ${
                   position.quantity
-                } 股\n`;
+                } 股 @ $${position.avg_price.toFixed(
+                  2
+                )} (当前: $${currentPrice.toFixed(2)})\n`;
               }
 
               await sendBilingualMessage(
