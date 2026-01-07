@@ -11,28 +11,36 @@ class TradingService {
   }
 
   async getCurrentPrice(symbol) {
-    // Try up to 3 times with exponential backoff
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // Normalize symbol to uppercase
+    const normalizedSymbol = symbol.toUpperCase();
+    console.log(`Fetching price for ${normalizedSymbol}...`);
+    
+    // Try with retries and longer backoff due to rate limiting
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        // Fetch real-time price from Yahoo Finance
-        const result = await yahooFinance.quote(symbol);
+        // Add delay between attempts to avoid rate limiting
+        if (attempt > 1) {
+          const waitTime = 5000; // 5 seconds
+          console.log(`Waiting ${waitTime/1000}s before retry...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+        
+        const result = await yahooFinance.quote(normalizedSymbol);
         const price = result.regularMarketPrice;
 
-        if (!price) {
-          throw new Error(`Unable to fetch price for ${symbol}`);
+        if (!price || price <= 0) {
+          throw new Error(`Invalid price returned`);
         }
 
+        console.log(`✓ Successfully fetched ${normalizedSymbol} = $${price}`);
         return price;
       } catch (error) {
-        console.error(`Attempt ${attempt} failed to fetch price for ${symbol}:`, error);
+        console.error(`✗ Attempt ${attempt} failed for ${normalizedSymbol}:`, error.message);
         
-        // If this is the last attempt, throw the error
-        if (attempt === 3) {
-          throw new Error(`Failed to fetch price for ${symbol} after 3 attempts. Please try again later.`);
+        if (attempt === 2) {
+          // On final failure, throw a more helpful error
+          throw new Error(`Unable to fetch price for ${normalizedSymbol}. Yahoo Finance is experiencing high traffic or rate limiting. Please try again in a few minutes, or provide a limit price to execute the order manually (e.g., /buy ${normalizedSymbol.toLowerCase()} <quantity> <price>).`);
         }
-        
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
       }
     }
   }
