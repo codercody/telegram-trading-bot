@@ -1,5 +1,4 @@
-const yahooFinance = require('yahoo-finance2').default;
-const { createClient } = require('@supabase/supabase-js');
+const { createClient } = require("@supabase/supabase-js");
 
 class TradingService {
   constructor() {
@@ -14,49 +13,57 @@ class TradingService {
     // Normalize symbol to uppercase
     const normalizedSymbol = symbol.toUpperCase();
     console.log(`Fetching price for ${normalizedSymbol}...`);
-    
-    // Try with retries and longer backoff due to rate limiting
-    for (let attempt = 1; attempt <= 2; attempt++) {
+
+    // Try multiple exchanges to find the stock
+    const exchanges = ["NYSEARCA", "NASDAQ", "NYSE", "AMEX", "MUTF", "OTCMKTS"];
+
+    for (const exchange of exchanges) {
       try {
-        // Add delay between attempts to avoid rate limiting
-        if (attempt > 1) {
-          const waitTime = 5000; // 5 seconds
-          console.log(`Waiting ${waitTime/1000}s before retry...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-        }
-        
-        const result = await yahooFinance.quote(normalizedSymbol);
-        const price = result.regularMarketPrice;
+        const url = `https://www.google.com/finance/quote/${normalizedSymbol}:${exchange}`;
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+        });
 
-        if (!price || price <= 0) {
-          throw new Error(`Invalid price returned`);
-        }
+        const html = await response.text();
+        const match = html.match(/data-last-price="([0-9.]+)"/);
 
-        console.log(`✓ Successfully fetched ${normalizedSymbol} = $${price}`);
-        return price;
+        if (match) {
+          const price = parseFloat(match[1]);
+          if (price > 0) {
+            console.log(
+              `✓ Google Finance: ${normalizedSymbol} (${exchange}) = $${price}`
+            );
+            return price;
+          }
+        }
       } catch (error) {
-        console.error(`✗ Attempt ${attempt} failed for ${normalizedSymbol}:`, error.message);
-        
-        if (attempt === 2) {
-          // On final failure, throw a more helpful error
-          throw new Error(`Unable to fetch price for ${normalizedSymbol}. Yahoo Finance is experiencing high traffic or rate limiting. Please try again in a few minutes, or provide a limit price to execute the order manually (e.g., /buy ${normalizedSymbol.toLowerCase()} <quantity> <price>).`);
-        }
+        console.error(
+          `✗ Failed to fetch ${normalizedSymbol} from ${exchange}:`,
+          error.message
+        );
       }
     }
+
+    throw new Error(
+      `Unable to fetch price for ${normalizedSymbol}. Please check the symbol is valid.`
+    );
   }
 
   async getBalance() {
     try {
       const isDemoMode = await this.isDemoMode();
       const { data, error } = await this.supabase
-        .from('global_account')
-        .select(isDemoMode ? 'demo_balance' : 'live_balance')
+        .from("global_account")
+        .select(isDemoMode ? "demo_balance" : "live_balance")
         .single();
 
       if (error) throw error;
       return isDemoMode ? data.demo_balance : data.live_balance;
     } catch (error) {
-      console.error('Error getting balance:', error);
+      console.error("Error getting balance:", error);
       throw error;
     }
   }
@@ -64,10 +71,10 @@ class TradingService {
   async updateBalance(amount) {
     try {
       const isDemoMode = await this.isDemoMode();
-      const balanceField = isDemoMode ? 'demo_balance' : 'live_balance';
-      
+      const balanceField = isDemoMode ? "demo_balance" : "live_balance";
+
       const { data: currentData, error: fetchError } = await this.supabase
-        .from('global_account')
+        .from("global_account")
         .select(balanceField)
         .single();
 
@@ -75,17 +82,17 @@ class TradingService {
 
       const newBalance = currentData[balanceField] + amount;
       if (newBalance < 0) {
-        throw new Error('Insufficient funds');
+        throw new Error("Insufficient funds");
       }
 
       const { error: updateError } = await this.supabase
-        .from('global_account')
+        .from("global_account")
         .update({ [balanceField]: newBalance })
-        .eq('id', 1);
+        .eq("id", 1);
 
       if (updateError) throw updateError;
     } catch (error) {
-      console.error('Error updating balance:', error);
+      console.error("Error updating balance:", error);
       throw error;
     }
   }
@@ -94,14 +101,14 @@ class TradingService {
     try {
       const isDemo = await this.isDemoMode();
       const { data: positions, error } = await this.supabase
-        .from('positions')
-        .select('*')
-        .eq('demo_mode', isDemo);
+        .from("positions")
+        .select("*")
+        .eq("demo_mode", isDemo);
 
       if (error) throw error;
       return positions || [];
     } catch (error) {
-      console.error('Error getting positions:', error);
+      console.error("Error getting positions:", error);
       throw error;
     }
   }
@@ -110,14 +117,14 @@ class TradingService {
     try {
       const isDemo = await this.isDemoMode();
       const { data: orders, error } = await this.supabase
-        .from('pending_orders')
-        .select('*')
-        .eq('demo_mode', isDemo);
+        .from("pending_orders")
+        .select("*")
+        .eq("demo_mode", isDemo);
 
       if (error) throw error;
       return orders || [];
     } catch (error) {
-      console.error('Error getting pending orders:', error);
+      console.error("Error getting pending orders:", error);
       throw error;
     }
   }
@@ -126,8 +133,8 @@ class TradingService {
     try {
       // Get all pending orders
       const { data: pendingOrders, error: ordersError } = await this.supabase
-        .from('pending_orders')
-        .select('*');
+        .from("pending_orders")
+        .select("*");
 
       if (ordersError) throw ordersError;
       if (!pendingOrders || pendingOrders.length === 0) return;
@@ -144,66 +151,58 @@ class TradingService {
       // Check each symbol's orders
       for (const [symbol, orders] of Object.entries(ordersBySymbol)) {
         try {
-          // Get historical price data for the symbol
-          const result = await yahooFinance.chart(symbol, {
-            period1: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
-            period2: new Date(),
-            interval: '1m'
-          });
-
-          if (!result || !result.quotes || result.quotes.length === 0) {
-            console.warn(`No price data available for ${symbol}`);
-            continue;
-          }
+          // Get current price for the symbol
+          const currentPrice = await this.getCurrentPrice(symbol);
 
           // Check each order for execution
           for (const order of orders) {
-            // Filter quotes to only include data after order creation
-            const orderCreatedAt = new Date(order.created_at);
-            const relevantQuotes = result.quotes.filter(quote => 
-              new Date(quote.date) >= orderCreatedAt
-            );
-
-            if (relevantQuotes.length === 0) {
-              console.warn(`No price data available for ${symbol} after order creation`);
-              continue;
-            }
-
-            // Get min and max prices from the filtered data
-            const prices = relevantQuotes.map(quote => quote.close).filter(x => x > 0);
-            const minPrice = Math.min(...prices);
-            const maxPrice = Math.max(...prices);
-
             // Log order check information
-            console.log('Checking pending order:', {
+            console.log("Checking pending order:", {
               orderId: order.id,
               symbol: order.symbol,
               type: order.type,
               quantity: order.quantity,
               limitPrice: order.limit_price,
-              createdAt: order.created_at,
-              prices: prices,
-              minPrice,
-              maxPrice,
-              canExecute: order.type === 'BUY' ? order.limit_price >= minPrice : order.limit_price <= maxPrice
+              currentPrice,
+              canExecute:
+                order.type === "BUY"
+                  ? order.limit_price >= currentPrice
+                  : order.limit_price <= currentPrice,
             });
 
-            if (order.type === 'BUY' && order.limit_price >= minPrice) {
+            if (order.type === "BUY" && order.limit_price >= currentPrice) {
               // Execute buy order at the limit price
-              await this.executeBuyOrder(order.symbol, order.quantity, order.limit_price);
+              await this.executeBuyOrder(
+                order.symbol,
+                order.quantity,
+                order.limit_price
+              );
               // Delete the pending order
               await this.supabase
-                .from('pending_orders')
+                .from("pending_orders")
                 .delete()
-                .eq('id', order.id);
-            } else if (order.type === 'SELL' && order.limit_price <= maxPrice) {
+                .eq("id", order.id);
+              console.log(
+                `✓ Executed pending BUY order for ${order.quantity} ${order.symbol} at $${order.limit_price}`
+              );
+            } else if (
+              order.type === "SELL" &&
+              order.limit_price <= currentPrice
+            ) {
               // Execute sell order at the limit price
-              await this.executeSellOrder(order.symbol, order.quantity, order.limit_price);
+              await this.executeSellOrder(
+                order.symbol,
+                order.quantity,
+                order.limit_price
+              );
               // Delete the pending order
               await this.supabase
-                .from('pending_orders')
+                .from("pending_orders")
                 .delete()
-                .eq('id', order.id);
+                .eq("id", order.id);
+              console.log(
+                `✓ Executed pending SELL order for ${order.quantity} ${order.symbol} at $${order.limit_price}`
+              );
             }
           }
         } catch (error) {
@@ -212,7 +211,7 @@ class TradingService {
         }
       }
     } catch (error) {
-      console.error('Error checking pending orders:', error);
+      console.error("Error checking pending orders:", error);
       throw error;
     }
   }
@@ -222,40 +221,43 @@ class TradingService {
     await this.updateBalance(-totalCost);
 
     const { data: existingPosition, error: fetchError } = await this.supabase
-      .from('positions')
-      .select('*')
-      .eq('symbol', symbol.toUpperCase())
-      .eq('demo_mode', await this.isDemoMode())
+      .from("positions")
+      .select("*")
+      .eq("symbol", symbol.toUpperCase())
+      .eq("demo_mode", await this.isDemoMode())
       .single();
 
-    if (fetchError && fetchError.code !== 'PGRST116') {
+    if (fetchError && fetchError.code !== "PGRST116") {
       throw fetchError;
     }
 
     if (existingPosition) {
       const newQuantity = existingPosition.quantity + quantity;
-      const newAvgPrice = (existingPosition.avg_price * existingPosition.quantity + price * quantity) / newQuantity;
+      const newAvgPrice =
+        (existingPosition.avg_price * existingPosition.quantity +
+          price * quantity) /
+        newQuantity;
 
       const { error: updateError } = await this.supabase
-        .from('positions')
+        .from("positions")
         .update({
           quantity: newQuantity,
-          avg_price: newAvgPrice
+          avg_price: newAvgPrice,
         })
-        .eq('symbol', symbol.toUpperCase())
-        .eq('demo_mode', await this.isDemoMode());
+        .eq("symbol", symbol.toUpperCase())
+        .eq("demo_mode", await this.isDemoMode());
 
       if (updateError) throw updateError;
     } else {
       const { error: insertError } = await this.supabase
-        .from('positions')
+        .from("positions")
         .insert([
           {
             symbol: symbol.toUpperCase(),
             quantity,
             avg_price: price,
-            demo_mode: await this.isDemoMode()
-          }
+            demo_mode: await this.isDemoMode(),
+          },
         ]);
 
       if (insertError) throw insertError;
@@ -266,15 +268,15 @@ class TradingService {
     const totalProceeds = quantity * price;
 
     const { data: position, error: fetchError } = await this.supabase
-      .from('positions')
-      .select('*')
-      .eq('symbol', symbol.toUpperCase())
-      .eq('demo_mode', await this.isDemoMode())
+      .from("positions")
+      .select("*")
+      .eq("symbol", symbol.toUpperCase())
+      .eq("demo_mode", await this.isDemoMode())
       .single();
 
     if (fetchError) throw fetchError;
     if (!position || position.quantity < quantity) {
-      throw new Error('Insufficient shares');
+      throw new Error("Insufficient shares");
     }
 
     await this.updateBalance(totalProceeds);
@@ -282,18 +284,18 @@ class TradingService {
     const newQuantity = position.quantity - quantity;
     if (newQuantity === 0) {
       const { error: deleteError } = await this.supabase
-        .from('positions')
+        .from("positions")
         .delete()
-        .eq('symbol', symbol.toUpperCase())
-        .eq('demo_mode', await this.isDemoMode());
+        .eq("symbol", symbol.toUpperCase())
+        .eq("demo_mode", await this.isDemoMode());
 
       if (deleteError) throw deleteError;
     } else {
       const { error: updateError } = await this.supabase
-        .from('positions')
+        .from("positions")
         .update({ quantity: newQuantity })
-        .eq('symbol', symbol.toUpperCase())
-        .eq('demo_mode', await this.isDemoMode());
+        .eq("symbol", symbol.toUpperCase())
+        .eq("demo_mode", await this.isDemoMode());
 
       if (updateError) throw updateError;
     }
@@ -302,14 +304,16 @@ class TradingService {
   async placeBuyOrder(symbol, quantity, limitPrice) {
     try {
       const isDemoMode = await this.isDemoMode();
-      
+
       // Check market hours for live mode
       if (!isDemoMode && !this.isMarketOpen()) {
-        throw new Error('Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.');
+        throw new Error(
+          "Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday."
+        );
       }
 
       const currentPrice = await this.getCurrentPrice(symbol);
-      
+
       // For market orders (no limit price) or if limit price is better than current price, execute immediately
       if (!limitPrice || limitPrice >= currentPrice) {
         await this.executeBuyOrder(symbol, quantity, currentPrice);
@@ -318,21 +322,21 @@ class TradingService {
           quantity,
           price: currentPrice,
           totalCost: quantity * currentPrice,
-          executed: true
+          executed: true,
         };
       }
 
       // For limit orders, place as pending order
       const { error: insertError } = await this.supabase
-        .from('pending_orders')
+        .from("pending_orders")
         .insert([
           {
             symbol: symbol.toUpperCase(),
             quantity,
             limit_price: limitPrice,
-            type: 'BUY',
-            demo_mode: isDemoMode
-          }
+            type: "BUY",
+            demo_mode: isDemoMode,
+          },
         ]);
 
       if (insertError) throw insertError;
@@ -341,10 +345,10 @@ class TradingService {
         symbol: symbol.toUpperCase(),
         quantity,
         limitPrice,
-        executed: false
+        executed: false,
       };
     } catch (error) {
-      console.error('Error placing buy order:', error);
+      console.error("Error placing buy order:", error);
       throw error;
     }
   }
@@ -352,14 +356,16 @@ class TradingService {
   async placeSellOrder(symbol, quantity, limitPrice) {
     try {
       const isDemoMode = await this.isDemoMode();
-      
+
       // Check market hours for live mode
       if (!isDemoMode && !this.isMarketOpen()) {
-        throw new Error('Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.');
+        throw new Error(
+          "Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday."
+        );
       }
 
       const currentPrice = await this.getCurrentPrice(symbol);
-      
+
       // For market orders (no limit price) or if limit price is better than current price, execute immediately
       if (!limitPrice || limitPrice <= currentPrice) {
         await this.executeSellOrder(symbol, quantity, currentPrice);
@@ -368,21 +374,21 @@ class TradingService {
           quantity,
           price: currentPrice,
           totalProceeds: quantity * currentPrice,
-          executed: true
+          executed: true,
         };
       }
 
       // For limit orders, place as pending order
       const { error: insertError } = await this.supabase
-        .from('pending_orders')
+        .from("pending_orders")
         .insert([
           {
             symbol: symbol.toUpperCase(),
             quantity,
             limit_price: limitPrice,
-            type: 'SELL',
-            demo_mode: isDemoMode
-          }
+            type: "SELL",
+            demo_mode: isDemoMode,
+          },
         ]);
 
       if (insertError) throw insertError;
@@ -391,10 +397,10 @@ class TradingService {
         symbol: symbol.toUpperCase(),
         quantity,
         limitPrice,
-        executed: false
+        executed: false,
       };
     } catch (error) {
-      console.error('Error placing sell order:', error);
+      console.error("Error placing sell order:", error);
       throw error;
     }
   }
@@ -403,15 +409,15 @@ class TradingService {
     try {
       const isDemo = await this.isDemoMode();
       const { error } = await this.supabase
-        .from('pending_orders')
+        .from("pending_orders")
         .delete()
-        .eq('id', orderId)
-        .eq('demo_mode', isDemo);
+        .eq("id", orderId)
+        .eq("demo_mode", isDemo);
 
       if (error) throw error;
       return true;
     } catch (error) {
-      console.error('Error cancelling order:', error);
+      console.error("Error cancelling order:", error);
       throw error;
     }
   }
@@ -419,14 +425,14 @@ class TradingService {
   async isDemoMode() {
     try {
       const { data, error } = await this.supabase
-        .from('global_account')
-        .select('demo_mode')
+        .from("global_account")
+        .select("demo_mode")
         .single();
 
       if (error) throw error;
       return data.demo_mode;
     } catch (error) {
-      console.error('Error checking demo mode:', error);
+      console.error("Error checking demo mode:", error);
       throw error;
     }
   }
@@ -434,13 +440,13 @@ class TradingService {
   async setDemoMode(isDemo) {
     try {
       const { error } = await this.supabase
-        .from('global_account')
+        .from("global_account")
         .update({ demo_mode: isDemo })
-        .eq('id', 1);
+        .eq("id", 1);
 
       if (error) throw error;
     } catch (error) {
-      console.error('Error setting demo mode:', error);
+      console.error("Error setting demo mode:", error);
       throw error;
     }
   }
@@ -448,11 +454,13 @@ class TradingService {
   isMarketOpen() {
     // Get current time in Eastern Time
     const now = new Date();
-    const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const etTime = new Date(
+      now.toLocaleString("en-US", { timeZone: "America/New_York" })
+    );
     const day = etTime.getDay();
     const hour = etTime.getHours();
     const minute = etTime.getMinutes();
-    
+
     // Check if it's a weekday (Monday = 1, Friday = 5)
     if (day === 0 || day === 6) {
       return false;
@@ -467,4 +475,4 @@ class TradingService {
   }
 }
 
-module.exports = { TradingService }; 
+module.exports = { TradingService };
