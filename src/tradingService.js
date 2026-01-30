@@ -1,3 +1,7 @@
+// Use node-fetch everywhere so Supabase, Telegram API, and price API all use the same implementation (avoids "fetch failed" in some runtimes)
+const nodeFetch = require("node-fetch");
+globalThis.fetch = nodeFetch;
+
 const { createClient } = require("@supabase/supabase-js");
 
 class TradingService {
@@ -5,7 +9,7 @@ class TradingService {
     // Initialize Supabase client
     this.supabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY
+      process.env.SUPABASE_ANON_KEY,
     );
   }
 
@@ -20,12 +24,16 @@ class TradingService {
     for (const exchange of exchanges) {
       try {
         const url = `https://www.google.com/finance/quote/${normalizedSymbol}:${exchange}`;
-        const response = await fetch(url, {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const response = await nodeFetch(url, {
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           },
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         const html = await response.text();
         const match = html.match(/data-last-price="([0-9.]+)"/);
@@ -34,7 +42,7 @@ class TradingService {
           const price = parseFloat(match[1]);
           if (price > 0) {
             console.log(
-              `✓ Google Finance: ${normalizedSymbol} (${exchange}) = $${price}`
+              `✓ Google Finance: ${normalizedSymbol} (${exchange}) = $${price}`,
             );
             return price;
           }
@@ -42,13 +50,13 @@ class TradingService {
       } catch (error) {
         console.error(
           `✗ Failed to fetch ${normalizedSymbol} from ${exchange}:`,
-          error.message
+          error.message,
         );
       }
     }
 
     throw new Error(
-      `Unable to fetch price for ${normalizedSymbol}. Please check the symbol is valid.`
+      `Unable to fetch price for ${normalizedSymbol}. Please check the symbol is valid.`,
     );
   }
 
@@ -175,7 +183,7 @@ class TradingService {
               await this.executeBuyOrder(
                 order.symbol,
                 order.quantity,
-                order.limit_price
+                order.limit_price,
               );
               // Delete the pending order
               await this.supabase
@@ -183,7 +191,7 @@ class TradingService {
                 .delete()
                 .eq("id", order.id);
               console.log(
-                `✓ Executed pending BUY order for ${order.quantity} ${order.symbol} at $${order.limit_price}`
+                `✓ Executed pending BUY order for ${order.quantity} ${order.symbol} at $${order.limit_price}`,
               );
             } else if (
               order.type === "SELL" &&
@@ -193,7 +201,7 @@ class TradingService {
               await this.executeSellOrder(
                 order.symbol,
                 order.quantity,
-                order.limit_price
+                order.limit_price,
               );
               // Delete the pending order
               await this.supabase
@@ -201,7 +209,7 @@ class TradingService {
                 .delete()
                 .eq("id", order.id);
               console.log(
-                `✓ Executed pending SELL order for ${order.quantity} ${order.symbol} at $${order.limit_price}`
+                `✓ Executed pending SELL order for ${order.quantity} ${order.symbol} at $${order.limit_price}`,
               );
             }
           }
@@ -308,7 +316,7 @@ class TradingService {
       // Check market hours for live mode
       if (!isDemoMode && !this.isMarketOpen()) {
         throw new Error(
-          "Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday."
+          "Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.",
         );
       }
 
@@ -360,7 +368,7 @@ class TradingService {
       // Check market hours for live mode
       if (!isDemoMode && !this.isMarketOpen()) {
         throw new Error(
-          "Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday."
+          "Market is currently closed. Trading hours are 9:30 AM - 4:00 PM ET, Monday-Friday.",
         );
       }
 
@@ -455,7 +463,7 @@ class TradingService {
     // Get current time in Eastern Time
     const now = new Date();
     const etTime = new Date(
-      now.toLocaleString("en-US", { timeZone: "America/New_York" })
+      now.toLocaleString("en-US", { timeZone: "America/New_York" }),
     );
     const day = etTime.getDay();
     const hour = etTime.getHours();

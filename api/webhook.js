@@ -145,20 +145,29 @@ export default async function handler(req, res) {
               let positionsZhMessage = "当前持仓：\n";
 
               for (const position of positions) {
-                const currentPrice = await tradingService.getCurrentPrice(
-                  position.symbol
-                );
+                let currentPriceStr = "N/A";
+                try {
+                  const currentPrice = await tradingService.getCurrentPrice(
+                    position.symbol
+                  );
+                  currentPriceStr = `$${currentPrice.toFixed(2)}`;
+                } catch (priceError) {
+                  console.error(
+                    `Could not fetch price for ${position.symbol}:`,
+                    priceError.message
+                  );
+                }
 
                 positionsEnMessage += `${escapeHtml(position.symbol)}: ${
                   position.quantity
                 } shares @ $${position.avg_price.toFixed(
                   2
-                )} (Current: $${currentPrice.toFixed(2)})\n`;
+                )} (Current: ${currentPriceStr})\n`;
                 positionsZhMessage += `${escapeHtml(position.symbol)}: ${
                   position.quantity
                 } 股 @ $${position.avg_price.toFixed(
                   2
-                )} (当前: $${currentPrice.toFixed(2)})\n`;
+                )} (当前: ${currentPriceStr})\n`;
               }
 
               await sendBilingualMessage(
